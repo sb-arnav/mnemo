@@ -89,7 +89,7 @@ def cmd_register(a):
             "created": _now(),
         },
         "verification": None,
-        "probe": None,
+        "probe": ({"q": a.probe_q, "a": a.probe_a, "history": []} if a.probe_q and a.probe_a else None),
     }
     rec["id"] = _mkid(rec)
     records = _load()
@@ -230,6 +230,48 @@ def cmd_quarantine(a):
     print(f"{r['id']} QUARANTINED + removed from live store: {a.reason}")
 
 
+# --- Phase 3: falsifiable probes + replay ----------------------------------
+
+def cmd_probes(a):
+    """Active lessons that carry a probe — for the replay worker to re-check."""
+    any_ = False
+    for r in _load():
+        if r["status"] == "active" and r.get("probe"):
+            any_ = True
+            pr = r["probe"]
+            print(f'{r["id"]}\t{pr["a"]}\t{pr["q"]}')
+    if not any_:
+        print("(none)")
+
+
+def cmd_probe_result(a):
+    """Record a replay outcome. A FAIL means the lesson no longer holds against
+    current state (drift / contradiction) → drop trust; if it falls below the
+    threshold it's automatically held from injection."""
+    records = _load()
+    r = _find(records, a.id)
+    pr = r.get("probe")
+    if not pr:
+        sys.exit(f"error: {a.id} has no probe")
+    pr.setdefault("history", []).append({"at": _now(), "result": a.result})
+    if a.result == "fail":
+        r["trust"] = max(0, r["trust"] - 25)
+        if r["trust"] < TRUST_THRESHOLD:
+            r["reason"] = (r.get("reason") or "") + " probe-fail(drift)"
+    _save(records)
+    print(f"{r['id']} probe={a.result} trust={r['trust']}")
+
+
+def cmd_eval_record(a):
+    """Append an eval-run summary to eval-history.jsonl (the compounding signal)."""
+    HOME.mkdir(parents=True, exist_ok=True)
+    rec = {"ts": _now(), "total": int(a.total), "passed": int(a.passed)}
+    with open(HOME / "eval-history.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    rate = (100 * rec["passed"] // rec["total"]) if rec["total"] else 0
+    print(f"eval recorded: {rec['passed']}/{rec['total']} probes held ({rate}%)")
+
+
 def main():
     p = argparse.ArgumentParser(prog="mnemo-lesson")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -242,6 +284,8 @@ def main():
     r.add_argument("--trigger", required=True, choices=["correction", "technique", "web-research"])
     r.add_argument("--web", action="store_true")
     r.add_argument("--text", default="")
+    r.add_argument("--probe-q", default="")
+    r.add_argument("--probe-a", default="", choices=["", "yes", "no"])
 
     l = sub.add_parser("list"); l.set_defaults(fn=cmd_list); l.add_argument("--status", choices=["active", "quarantined"])
     g = sub.add_parser("get"); g.set_defaults(fn=cmd_get); g.add_argument("id")
@@ -254,6 +298,10 @@ def main():
     uv = sub.add_parser("unverified"); uv.set_defaults(fn=cmd_unverified)
     vf = sub.add_parser("verify"); vf.set_defaults(fn=cmd_verify); vf.add_argument("id"); vf.add_argument("--trust", default=None)
     q = sub.add_parser("quarantine"); q.set_defaults(fn=cmd_quarantine); q.add_argument("id"); q.add_argument("--reason", required=True)
+
+    pb = sub.add_parser("probes"); pb.set_defaults(fn=cmd_probes)
+    prr = sub.add_parser("probe-result"); prr.set_defaults(fn=cmd_probe_result); prr.add_argument("id"); prr.add_argument("result", choices=["pass", "fail"])
+    er = sub.add_parser("eval-record"); er.set_defaults(fn=cmd_eval_record); er.add_argument("--total", required=True); er.add_argument("--passed", required=True)
 
     a = p.parse_args()
     a.fn(a)

@@ -67,6 +67,8 @@ def main():
         _apply(a[1:])
     elif c == "curiosity":
         _run(["bash", str(SCRIPTS / "curiosity.sh")])
+    elif c == "eval":
+        _run(["bash", str(SCRIPTS / "eval.sh")])
     elif c == "off":
         HOME.mkdir(parents=True, exist_ok=True)
         (HOME / "OFF").touch()

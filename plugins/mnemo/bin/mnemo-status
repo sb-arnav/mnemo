@@ -120,6 +120,23 @@ def main():
     except Exception as e:
         print(f"  (registry unavailable: {e})")
 
+    # --- Probe replay (did learning still hold?) ---
+    ev = HOME / "eval-history.jsonl"
+    if ev.exists():
+        try:
+            rows = [json.loads(l) for l in ev.read_text(encoding="utf-8").splitlines() if l.strip()]
+        except Exception:
+            rows = []
+        if rows:
+            last = rows[-1]
+            rate = (100 * last["passed"] // last["total"]) if last.get("total") else 0
+            trend = ""
+            if len(rows) > 1 and rows[-2].get("total"):
+                prate = 100 * rows[-2]["passed"] // rows[-2]["total"]
+                trend = f"  (prev {prate}%)"
+            _section("probe replay (did learning still hold?)")
+            print(f"  last run: {last['passed']}/{last['total']} probes held — {rate}%{trend}")
+
     # --- Compounding signal ---
     _section("compounding signal (corrections)")
     corr = _load_corrections()

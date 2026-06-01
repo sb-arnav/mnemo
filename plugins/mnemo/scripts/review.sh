@@ -59,7 +59,8 @@ PROVENANCE — REQUIRED for every lesson you write (this is what makes mnemo tru
 After writing a memory entry OR forging a skill, register it so it carries provenance + a trust score:
   python3 $LESSON register --type memory|skill --target <user|memory|skill-name> \\
     --key \"<short unique substring of the entry / the skill name>\" --session \"$SESSION\" \\
-    --trigger <correction|technique|web-research> [--web]
+    --trigger <correction|technique|web-research> [--web] \\
+    --probe-q \"<a yes/no question whose correct answer encodes this lesson>\" --probe-a yes|no
   • trigger=correction  → the user corrected you (highest trust)
   • trigger=technique   → a non-trivial fix/workflow you discovered
   • trigger=web-research → the lesson is sourced from web content (lowest trust; treat as unverified)

@@ -83,6 +83,12 @@ and the session id + this session's web-influence flag):
   trust — it may be poisoned, so it's held from injection until verified)
 - add `--web` whenever this session involved web research
 
+Also attach a tiny **falsifiable probe** to each lesson — a yes/no question
+whose correct answer encodes the rule — with `--probe-q "..." --probe-a yes|no`
+(e.g. for "deploy via git push, never vercel --prod":
+`--probe-q "Should you run vercel --prod directly to deploy?" --probe-a no`).
+The probe lets mnemo later re-check that the lesson still holds.
+
 Register honestly. A web-sourced "fact" you can't vouch for SHOULD land at low
 trust and be held — that's the safety property, not a failure.
 
