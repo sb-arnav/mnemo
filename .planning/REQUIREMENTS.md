@@ -40,4 +40,19 @@ A "lesson" = a memory entry (USER.md / MEMORY.md) or a forged skill.
 
 ## Traceability
 
-(Filled by the roadmapper — every v1 REQ maps to exactly one phase.)
+Every v1 requirement maps to exactly one phase. 12/12 mapped, no orphans, no duplicates.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| PROV-01 | Phase 1 — Provenance & Trust on the Write Path | Pending |
+| PROV-02 | Phase 1 — Provenance & Trust on the Write Path | Pending |
+| PROV-03 | Phase 1 — Provenance & Trust on the Write Path | Pending |
+| VERIFY-01 | Phase 2 — The Verification Gate | Pending |
+| VERIFY-02 | Phase 2 — The Verification Gate | Pending |
+| VERIFY-03 | Phase 2 — The Verification Gate | Pending |
+| EVAL-01 | Phase 3 — Falsifiable Probes & Replay | Pending |
+| EVAL-02 | Phase 3 — Falsifiable Probes & Replay | Pending |
+| EVAL-03 | Phase 3 — Falsifiable Probes & Replay | Pending |
+| VERIFY-04 | Phase 4 — Native Trust Surface | Pending |
+| NATIVE-01 | Phase 4 — Native Trust Surface | Pending |
+| NATIVE-02 | Phase 4 — Native Trust Surface | Pending |
