@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""mnemo-lesson — the trust registry for everything the agent learns.
+
+Every "lesson" (a memory entry or a forged skill) is registered here at birth
+with PROVENANCE (which session, what triggered it, was web content involved) and
+a TRUST score. This is the spine of mnemo's edge over Hermes: Hermes writes
+lessons blindly; mnemo records where each came from and how much to trust it, and
+gates injection on that trust.
+
+Trust evolves: a base score from provenance (here, Phase 1), adjusted by the
+verification gate (Phase 2) and probe replay (Phase 3).
+
+Store: ~/.mnemo/lessons.json  (a list of records; plain JSON, git-trackable)
+
+Record:
+  { id, type: memory|skill, target, key, text, status: active|quarantined,
+    trust: 0-100, reason, provenance:{session,trigger,web_influence,created},
+    verification: null, probe: null }
+
+Usage:
+  mnemo-lesson register --type memory --target user --key "<substr>" \
+      --session <id> --trigger correction|technique|web-research [--web] [--text "<text>"]
+  mnemo-lesson list [--status active|quarantined]
+  mnemo-lesson get <id>
+  mnemo-lesson set-trust <id> <0-100>
+  mnemo-lesson set-status <id> active|quarantined [--reason "..."]
+  mnemo-lesson trust-of --type memory --key "<text>"   # highest trust of a matching active lesson, or 100 if unregistered
+  mnemo-lesson below <threshold> [--type memory]       # texts of registered lessons below threshold (for inject filtering)
+  mnemo-lesson threshold                               # print the inject trust threshold
+"""
+import sys, os, json, hashlib, argparse
+from pathlib import Path
+from datetime import datetime, timezone
+
+HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+STORE = HOME / "lessons.json"
+TRUST_THRESHOLD = int(os.environ.get("MNEMO_TRUST_THRESHOLD", "50"))  # below this → held from auto-inject
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _load():
+    if not STORE.exists():
+        return []
+    try:
+        return json.loads(STORE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save(records):
+    HOME.mkdir(parents=True, exist_ok=True)
+    tmp = STORE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, STORE)
+
+
+def _mkid(rec):
+    h = hashlib.sha1(
+        f"{rec['type']}|{rec['target']}|{rec['key']}|{rec['provenance']['session']}|{rec['provenance']['created']}".encode()
+    ).hexdigest()
+    return h[:10]
+
+
+def _base_trust(trigger, web):
+    base = {"correction": 85, "technique": 65, "web-research": 45}.get(trigger, 60)
+    if web:
+        base -= 20  # web content can be poisoned until the verifier (Phase 2) clears it
+    return max(0, min(100, base))
+
+
+def cmd_register(a):
+    rec = {
+        "type": a.type,
+        "target": a.target,
+        "key": a.key,
+        "text": a.text or a.key,
+        "status": "active",
+        "trust": _base_trust(a.trigger, a.web),
+        "reason": "",
+        "provenance": {
+            "session": a.session or "unknown",
+            "trigger": a.trigger,
+            "web_influence": bool(a.web),
+            "created": _now(),
+        },
+        "verification": None,
+        "probe": None,
+    }
+    rec["id"] = _mkid(rec)
+    records = _load()
+    # de-dupe: same type+target+key → update provenance/trust, keep id
+    for r in records:
+        if r["type"] == rec["type"] and r["target"] == rec["target"] and r["key"] == rec["key"]:
+            r.update({"text": rec["text"], "provenance": rec["provenance"], "trust": rec["trust"], "status": "active"})
+            _save(records)
+            print(f"{r['id']} trust={r['trust']} (updated)")
+            return
+    records.append(rec)
+    _save(records)
+    print(f"{rec['id']} trust={rec['trust']}")
+
+
+def _find(records, lid):
+    for r in records:
+        if r["id"] == lid:
+            return r
+    sys.exit(f"error: no lesson {lid}")
+
+
+def cmd_list(a):
+    records = _load()
+    if a.status:
+        records = [r for r in records if r["status"] == a.status]
+    if not records:
+        print("(no lessons registered)")
+        return
+    for r in sorted(records, key=lambda r: r["trust"]):
+        p = r["provenance"]
+        flag = " ⚠quarantined" if r["status"] == "quarantined" else ""
+        web = " web" if p.get("web_influence") else ""
+        print(f"{r['id']}  trust={r['trust']:>3}  {r['type']}/{r['target']}  [{p['trigger']}{web}]{flag}  {r['key'][:48]}")
+
+
+def cmd_get(a):
+    print(json.dumps(_find(_load(), a.id), ensure_ascii=False, indent=2))
+
+
+def cmd_set_trust(a):
+    records = _load()
+    r = _find(records, a.id)
+    r["trust"] = max(0, min(100, int(a.score)))
+    _save(records)
+    print(f"{r['id']} trust={r['trust']}")
+
+
+def cmd_set_status(a):
+    records = _load()
+    r = _find(records, a.id)
+    r["status"] = a.status
+    if a.reason:
+        r["reason"] = a.reason
+    _save(records)
+    print(f"{r['id']} status={r['status']}")
+
+
+def cmd_trust_of(a):
+    # highest trust among ACTIVE registered lessons whose key is a substring of the given text
+    records = _load()
+    cands = [r["trust"] for r in records
+             if r["type"] == a.type and r["status"] == "active"
+             and (r["key"] in a.key or a.key in r["key"])]
+    print(max(cands) if cands else 100)  # unregistered → trusted (legacy/manual entries)
+
+
+def cmd_below(a):
+    records = _load()
+    for r in records:
+        if a.type and r["type"] != a.type:
+            continue
+        if r["trust"] < a.threshold or r["status"] == "quarantined":
+            print(r["text"])
+
+
+def cmd_threshold(a):
+    print(TRUST_THRESHOLD)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="mnemo-lesson")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("register"); r.set_defaults(fn=cmd_register)
+    r.add_argument("--type", required=True, choices=["memory", "skill"])
+    r.add_argument("--target", required=True)
+    r.add_argument("--key", required=True)
+    r.add_argument("--session", default="unknown")
+    r.add_argument("--trigger", required=True, choices=["correction", "technique", "web-research"])
+    r.add_argument("--web", action="store_true")
+    r.add_argument("--text", default="")
+
+    l = sub.add_parser("list"); l.set_defaults(fn=cmd_list); l.add_argument("--status", choices=["active", "quarantined"])
+    g = sub.add_parser("get"); g.set_defaults(fn=cmd_get); g.add_argument("id")
+    st = sub.add_parser("set-trust"); st.set_defaults(fn=cmd_set_trust); st.add_argument("id"); st.add_argument("score")
+    ss = sub.add_parser("set-status"); ss.set_defaults(fn=cmd_set_status); ss.add_argument("id"); ss.add_argument("status", choices=["active", "quarantined"]); ss.add_argument("--reason", default="")
+    to = sub.add_parser("trust-of"); to.set_defaults(fn=cmd_trust_of); to.add_argument("--type", required=True, choices=["memory", "skill"]); to.add_argument("--key", required=True)
+    b = sub.add_parser("below"); b.set_defaults(fn=cmd_below); b.add_argument("threshold", type=int); b.add_argument("--type", choices=["memory", "skill"])
+    th = sub.add_parser("threshold"); th.set_defaults(fn=cmd_threshold)
+
+    a = p.parse_args()
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()

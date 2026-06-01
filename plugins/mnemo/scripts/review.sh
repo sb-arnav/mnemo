@@ -26,11 +26,13 @@ mkdir -p "$MNEMO_HOME/logs"
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
 MEM="$PLUGIN_ROOT/bin/mnemo-mem"
-SKILL="$PLUGIN_ROOT/bin/mnemo-skill"
+LESSON="$PLUGIN_ROOT/bin/mnemo-lesson"
 SYS="$(cat "$PLUGIN_ROOT/prompts/combined-review.md")"
 SKILLS_DIR="${MNEMO_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$SKILLS_DIR"
 TODAY="$(date -u +%Y-%m-%d)"
+# Web-influence detection: did this session pull in web content (poisoning surface)?
+if grep -qiE '"(WebFetch|WebSearch)"|web_search|tavily|"name":"mcp__' "$TRANSCRIPT" 2>/dev/null; then WEB=1; else WEB=0; fi
 
 USER_MSG="A Claude Code session just ended. Its full transcript (JSONL, one message per line) is at:
   $TRANSCRIPT
@@ -53,12 +55,18 @@ SKILLS (live, native Claude Code skills at $SKILLS_DIR/<name>/SKILL.md):
     your instructions (name, description, forged-by: mnemo, forged: $TODAY, uses: 0,
     last-used: never, contradicted: false).
 
-SKILL EFFECTIVENESS (the measured-loop step — do it every pass):
-  python3 $SKILL list                       # forged library + usage
-  python3 $SKILL touch <name>               # a forged skill actually fired this session
-  python3 $SKILL flag  <name> \"<reason>\"    # a correction contradicts a forged skill (then patch it)
+PROVENANCE — REQUIRED for every lesson you write (this is what makes mnemo trustworthy):
+After writing a memory entry OR forging a skill, register it so it carries provenance + a trust score:
+  python3 $LESSON register --type memory|skill --target <user|memory|skill-name> \\
+    --key \"<short unique substring of the entry / the skill name>\" --session \"$SESSION\" \\
+    --trigger <correction|technique|web-research> [--web]
+  • trigger=correction  → the user corrected you (highest trust)
+  • trigger=technique   → a non-trivial fix/workflow you discovered
+  • trigger=web-research → the lesson is sourced from web content (lowest trust; treat as unverified)
+  • add --web if THIS session involved web research (this session's web-influence = $WEB).
+Low-trust lessons (web-sourced / unverified) are automatically HELD from injection until trust is raised — that is the intended safety behaviour, not a bug. Register honestly.
 
-When finished, print a single line summarising what you changed (e.g. 'updated USER.md; forged skill deploy-staq; touched deploy-staq'), or exactly 'Nothing to save.'"
+When finished, print a single line summarising what you changed (e.g. 'updated USER.md (registered, trust 85); forged skill deploy-staq (registered)'), or exactly 'Nothing to save.'"
 
 echo "[$(date -u +%FT%TZ)] review START session=$SESSION model=$MODEL transcript=$TRANSCRIPT" >>"$LOG"
 timeout "${MNEMO_REVIEW_TIMEOUT:-300}" env \

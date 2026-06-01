@@ -19,6 +19,11 @@ _TTY = sys.stdout.isatty()
 def _b(s):
     return f"\033[1m{s}\033[0m" if _TTY else s
 
+
+def _trust_of(line):
+    m = re.search(r"trust=\s*(\d+)", line)
+    return int(m.group(1)) if m else 100
+
 STOP = set("the a an and or but if then to of in on for with at by from is are was "
            "were be been being this that these those it its as you your i we they "
            "do dont don't not no yes can cant could would should will just like "
@@ -95,16 +100,25 @@ def main():
     soul = HOME / "SOUL.md"
     print(f"  soul        {'set' if soul.exists() and soul.read_text().strip() else 'empty'}")
 
-    # --- Forged skills (effectiveness) ---
-    _section("forged skills (effectiveness)")
+    # --- Trust registry (provenance + trust on every lesson) ---
+    _section("trust registry (lessons: provenance + trust)")
     try:
-        out = subprocess.run([sys.executable, str(PLUGIN_ROOT / "bin" / "mnemo-skill"), "list"],
+        out = subprocess.run([sys.executable, str(PLUGIN_ROOT / "bin" / "mnemo-lesson"), "list"],
                              capture_output=True, text=True, timeout=10,
-                             env={**os.environ, "MNEMO_SKILLS_DIR": str(SKILLS_DIR)})
+                             env={**os.environ, "MNEMO_HOME": str(HOME)})
         body = (out.stdout or "").rstrip()
-        print("\n".join("  " + l for l in body.splitlines()) if body else "  (none)")
+        if not body or "no lessons" in body:
+            print("  (no lessons registered yet)")
+        else:
+            lines = body.splitlines()
+            held = sum(1 for l in lines if "quarantined" in l)
+            low = sum(1 for l in lines if "trust=" in l and _trust_of(l) < 50)
+            print("\n".join("  " + l for l in lines[:8]))
+            if len(lines) > 8:
+                print(f"  … +{len(lines)-8} more")
+            print(f"  ── {len(lines)} lessons · {low} below trust-threshold (held from inject) · {held} quarantined")
     except Exception as e:
-        print(f"  (skill list unavailable: {e})")
+        print(f"  (registry unavailable: {e})")
 
     # --- Compounding signal ---
     _section("compounding signal (corrections)")

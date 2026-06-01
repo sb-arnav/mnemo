@@ -19,7 +19,7 @@ Usage:
   mnemo-mem show    <memory|user>
   mnemo-mem inject                # raw soul+user+memory block for SessionStart
 """
-import sys, os, json, tempfile
+import sys, os, json, tempfile, subprocess
 from pathlib import Path
 
 HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
@@ -27,6 +27,28 @@ DELIM = "\n§\n"          # \n§\n
 LIMITS = {"memory": 2200, "user": 1375}
 FILES = {"memory": "MEMORY.md", "user": "USER.md"}
 SOUL_CAP = 1600
+TRUST_THRESHOLD = int(os.environ.get("MNEMO_TRUST_THRESHOLD", "50"))
+
+
+def _held_texts():
+    """Entry texts the trust registry says to HOLD from injection (low trust /
+    quarantined). Empty on any error — trust-gating must never break injection."""
+    try:
+        binp = Path(__file__).resolve().parent / "mnemo-lesson"
+        if not binp.exists():
+            return []
+        out = subprocess.run(
+            [sys.executable, str(binp), "below", str(TRUST_THRESHOLD), "--type", "memory"],
+            capture_output=True, text=True, timeout=5,
+            env={**os.environ, "MNEMO_HOME": str(HOME)},
+        )
+        return [l for l in out.stdout.splitlines() if l.strip()]
+    except Exception:
+        return []
+
+
+def _is_held(entry, held):
+    return any(h in entry or entry in h for h in held)
 
 
 def _path(target): return HOME / FILES[target]
@@ -124,8 +146,10 @@ def cmd_remove(target, old):
     _ok(target, entries, "removed")
 
 
-def _block(target):
+def _block(target, held=None):
     entries = _read(target)
+    if held:
+        entries = [e for e in entries if not _is_held(e, held)]
     if not entries:
         return ""
     cur, lim = _size(entries), LIMITS[target]
@@ -145,13 +169,14 @@ def cmd_show(target):
 
 def cmd_inject():
     parts = []
+    held = _held_texts()  # trust-gating: low-trust / quarantined lessons are NOT injected
     soul = HOME / "SOUL.md"
     if soul.exists() and soul.read_text(encoding="utf-8").strip():
         body = soul.read_text(encoding="utf-8").strip()[:SOUL_CAP]
         sep = "═" * 46
         parts.append(f"{sep}\nSOUL (how you operate for this user)\n{sep}\n{body}")
     for t in ("user", "memory"):
-        b = _block(t)
+        b = _block(t, held=held)
         if b:
             parts.append(b)
     if not parts:

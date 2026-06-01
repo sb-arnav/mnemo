@@ -57,10 +57,12 @@ def main():
         _run([sys.executable, str(BIN / "mnemo-status")])
     elif c == "mem":
         _run([sys.executable, str(BIN / "mnemo-mem")] + a[1:])
+    elif c == "lesson":
+        _run([sys.executable, str(BIN / "mnemo-lesson")] + a[1:])
+    elif c == "trust":
+        _run([sys.executable, str(BIN / "mnemo-lesson"), "list"] + a[1:])
     elif c == "skill":
         _run([sys.executable, str(BIN / "mnemo-skill")] + a[1:])
-    elif c == "gc":
-        _run([sys.executable, str(BIN / "mnemo-skill"), "gc"] + a[1:])
     elif c == "apply":
         _apply(a[1:])
     elif c == "curiosity":
