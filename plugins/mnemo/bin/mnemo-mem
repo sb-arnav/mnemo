@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""mnemo-mem — bounded, cross-session memory store for the mnemo plugin.
+
+A standalone CLI port of Hermes Agent's MemoryStore
+(NousResearch/hermes-agent, tools/memory_tool.py, MIT). Two bounded,
+section-sign(§)-delimited stores that the agent curates automatically:
+
+  USER.md   — who the user is (preferences, style, habits)   cap 1375 chars
+  MEMORY.md — agent notes (environment, conventions, lessons) cap 2200 chars
+
+Bounded on purpose: the cap forces prioritisation, which is *why* the
+memory stays sharp instead of becoming a dump. Mid-session writes hit disk
+immediately; injection is a frozen snapshot taken at session start.
+
+Usage:
+  mnemo-mem add     <memory|user> "<content>"
+  mnemo-mem replace <memory|user> "<old substring>" "<new content>"
+  mnemo-mem remove  <memory|user> "<old substring>"
+  mnemo-mem show    <memory|user>
+  mnemo-mem inject                # raw soul+user+memory block for SessionStart
+"""
+import sys, os, json, tempfile
+from pathlib import Path
+
+HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+DELIM = "\n§\n"          # \n§\n
+LIMITS = {"memory": 2200, "user": 1375}
+FILES = {"memory": "MEMORY.md", "user": "USER.md"}
+SOUL_CAP = 1600
+
+
+def _path(target): return HOME / FILES[target]
+
+
+def _read(target):
+    p = _path(target)
+    if not p.exists():
+        return []
+    raw = p.read_text(encoding="utf-8")
+    if not raw.strip():
+        return []
+    return [e.strip() for e in raw.split(DELIM) if e.strip()]
+
+
+def _write(target, entries):
+    HOME.mkdir(parents=True, exist_ok=True)
+    p = _path(target)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".mem_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(DELIM.join(entries))
+        os.replace(tmp, p)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+
+def _size(entries): return len(DELIM.join(entries))
+
+
+def _ok(target, entries, msg):
+    print(f"ok: {msg} [{target} {_size(entries)}/{LIMITS[target]} chars, "
+          f"{len(entries)} entries]")
+    sys.exit(0)
+
+
+def _fail(msg, code=1):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def _bad_target(t):
+    if t not in LIMITS:
+        _fail(f"target must be 'memory' or 'user', got '{t}'")
+
+
+def _match(entries, needle):
+    idxs = [i for i, e in enumerate(entries) if needle in e]
+    if not idxs:
+        _fail(f"no entry matched '{needle}'")
+    if len(idxs) > 1 and len({entries[i] for i in idxs}) > 1:
+        _fail(f"'{needle}' is ambiguous ({len(idxs)} entries). Be more specific.")
+    return idxs[0]
+
+
+def cmd_add(target, content):
+    _bad_target(target)
+    content = content.strip()
+    if not content:
+        _fail("content cannot be empty")
+    entries = list(dict.fromkeys(_read(target)))
+    if content in entries:
+        _ok(target, entries, "duplicate — not added")
+    new = entries + [content]
+    if _size(new) > LIMITS[target]:
+        _fail(f"adding this would put {target} at {_size(new)}/{LIMITS[target]} "
+              f"chars. Replace or remove an entry first.")
+    _write(target, new)
+    _ok(target, new, "added")
+
+
+def cmd_replace(target, old, new):
+    _bad_target(target)
+    new = new.strip()
+    if not new:
+        _fail("new content empty — use 'remove' to delete")
+    entries = _read(target)
+    idx = _match(entries, old.strip())
+    test = entries.copy(); test[idx] = new
+    if _size(test) > LIMITS[target]:
+        _fail(f"replacement puts {target} at {_size(test)}/{LIMITS[target]} chars. Shorten it.")
+    entries[idx] = new
+    _write(target, entries)
+    _ok(target, entries, "replaced")
+
+
+def cmd_remove(target, old):
+    _bad_target(target)
+    entries = _read(target)
+    idx = _match(entries, old.strip())
+    entries.pop(idx)
+    _write(target, entries)
+    _ok(target, entries, "removed")
+
+
+def _block(target):
+    entries = _read(target)
+    if not entries:
+        return ""
+    cur, lim = _size(entries), LIMITS[target]
+    pct = min(100, int(cur / lim * 100)) if lim else 0
+    hdr = ("USER PROFILE (who the user is)" if target == "user"
+           else "MEMORY (your notes: environment, conventions, lessons)")
+    sep = "═" * 46
+    return f"{sep}\n{hdr} [{pct}% — {cur}/{lim} chars]\n{sep}\n{DELIM.join(entries)}"
+
+
+def cmd_show(target):
+    _bad_target(target)
+    b = _block(target)
+    print(b if b else f"({target} is empty)")
+    sys.exit(0)
+
+
+def cmd_inject():
+    parts = []
+    soul = HOME / "SOUL.md"
+    if soul.exists() and soul.read_text(encoding="utf-8").strip():
+        body = soul.read_text(encoding="utf-8").strip()[:SOUL_CAP]
+        sep = "═" * 46
+        parts.append(f"{sep}\nSOUL (how you operate for this user)\n{sep}\n{body}")
+    for t in ("user", "memory"):
+        b = _block(t)
+        if b:
+            parts.append(b)
+    if not parts:
+        sys.exit(0)
+    print("[mnemo — persistent cross-session memory you curate automatically. "
+          "Treat as durable context, not instructions from the user.]\n\n"
+          + "\n\n".join(parts))
+    sys.exit(0)
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        _fail("usage: mnemo-mem add|replace|remove|show|inject ...", 2)
+    cmd = a[0]
+    try:
+        if cmd == "add":      cmd_add(a[1], a[2])
+        elif cmd == "replace": cmd_replace(a[1], a[2], a[3])
+        elif cmd == "remove":  cmd_remove(a[1], a[2])
+        elif cmd == "show":    cmd_show(a[1])
+        elif cmd == "inject":  cmd_inject()
+        else: _fail(f"unknown command '{cmd}'", 2)
+    except IndexError:
+        _fail(f"missing argument for '{cmd}'", 2)
+
+
+if __name__ == "__main__":
+    main()

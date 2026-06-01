@@ -1,0 +1,16 @@
+mnemo
+Copyright (c) 2026 Arnav Maurya — MIT License
+
+This project adapts design and prompt text from Hermes Agent by Nous Research
+(https://github.com/NousResearch/hermes-agent), used under the MIT License.
+
+Specifically, the following are derived from Hermes Agent:
+  - The bounded, §-delimited two-store memory model (USER.md / MEMORY.md) and
+    its character limits (1375 / 2200), ported in plugins/mnemo/bin/mnemo-mem.
+  - The background-review judgment guidance (what to save, the skill preference
+    order, the "do not capture" list), adapted in
+    plugins/mnemo/prompts/combined-review.md.
+
+Hermes Agent's implementation is a Python agent runtime; mnemo is an independent
+re-implementation of the *loop* as native Claude Code plugin hooks, and shares
+no source code — only the design and prompt guidance noted above.

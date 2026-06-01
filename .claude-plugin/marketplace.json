@@ -1,0 +1,15 @@
+{
+  "name": "mnemo",
+  "owner": { "name": "Arnav Maurya" },
+  "metadata": {
+    "description": "mnemo — the compounding memory loop for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "mnemo",
+      "source": "./plugins/mnemo",
+      "description": "Auto-curated cross-session memory + a user model + skills your agent writes for itself. The Hermes self-improving loop, native to Claude Code — bounded, auditable, on your own subscription."
+    }
+  ]
+}

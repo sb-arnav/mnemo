@@ -1,0 +1,9 @@
+{
+  "name": "mnemo",
+  "description": "The Hermes self-improving loop, native to Claude Code: auto-curated cross-session memory, a user model, and skills the agent writes for itself — bounded, auditable, powered by your own subscription.",
+  "version": "0.1.0",
+  "author": { "name": "Arnav Maurya" },
+  "license": "MIT",
+  "keywords": ["memory", "skills", "self-improving", "learning-loop", "hermes"],
+  "hooks": "./hooks/hooks.json"
+}
