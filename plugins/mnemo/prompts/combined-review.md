@@ -56,9 +56,35 @@ long flat list of one-session-one-skill entries.
 You may CREATE new skills and EDIT skills whose frontmatter contains
 `forged-by: mnemo`. You must NEVER edit, rename, or delete any other skill —
 human-authored skills, plugin skills, and bundled skills are strictly
-off-limits. Every new skill you create MUST carry `forged-by: mnemo` in its
-frontmatter. This keeps mnemo auditable and prevents drift into the user's
+off-limits. This keeps mnemo auditable and prevents drift into the user's
 curated setup.
+
+Every new skill you create MUST carry this exact frontmatter shape (the task
+message gives you today's date):
+
+    ---
+    name: <class-level-name>
+    description: <when to use it>
+    forged-by: mnemo
+    forged: <YYYY-MM-DD>
+    uses: 0
+    last-used: never
+    contradicted: false
+    ---
+
+## Skill effectiveness — do this every pass (this is what makes mnemo better than a blind loop)
+
+After you've handled memory and skill *content*, account for effectiveness
+using the `mnemo-skill` tool (the task message gives its path):
+
+1. Run `mnemo-skill list` to see the forged library and its usage.
+2. For any forged skill that was actually loaded or used in THIS session's
+   transcript, run `mnemo-skill touch <name>` — that records it earned its keep.
+3. If something in this session CONTRADICTS an existing forged skill (the user
+   did it differently, or corrected an approach a forged skill encodes), do NOT
+   silently leave the wrong skill in place: run
+   `mnemo-skill flag <name> "<why>"` and then patch the skill to be correct.
+   A forged skill that taught the agent the wrong thing is worse than no skill.
 
 ## Do NOT capture (these harden into constraints that bite later)
 - Environment-dependent failures: missing binaries, "command not found",

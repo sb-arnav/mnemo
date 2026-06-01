@@ -26,9 +26,11 @@ mkdir -p "$MNEMO_HOME/logs"
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
 MEM="$PLUGIN_ROOT/bin/mnemo-mem"
+SKILL="$PLUGIN_ROOT/bin/mnemo-skill"
 SYS="$(cat "$PLUGIN_ROOT/prompts/combined-review.md")"
 SKILLS_DIR="${MNEMO_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$SKILLS_DIR"
+TODAY="$(date -u +%Y-%m-%d)"
 
 USER_MSG="A Claude Code session just ended. Its full transcript (JSONL, one message per line) is at:
   $TRANSCRIPT
@@ -47,9 +49,16 @@ MEMORY (bounded; the CLI enforces the §-format and char caps — always use it,
 SKILLS (live, native Claude Code skills at $SKILLS_DIR/<name>/SKILL.md):
   • You may CREATE a new skill, or EDIT a skill whose frontmatter contains 'forged-by: mnemo'.
   • You must NEVER edit any other skill (human-authored or plugin skills are off-limits).
-  • New skills MUST carry frontmatter: name, description, and 'forged-by: mnemo'.
+  • Today's date is $TODAY — new skills MUST carry the full frontmatter shape from
+    your instructions (name, description, forged-by: mnemo, forged: $TODAY, uses: 0,
+    last-used: never, contradicted: false).
 
-When finished, print a single line summarising what you changed (e.g. 'updated USER.md; forged skill deploy-staq'), or exactly 'Nothing to save.'"
+SKILL EFFECTIVENESS (the measured-loop step — do it every pass):
+  python3 $SKILL list                       # forged library + usage
+  python3 $SKILL touch <name>               # a forged skill actually fired this session
+  python3 $SKILL flag  <name> \"<reason>\"    # a correction contradicts a forged skill (then patch it)
+
+When finished, print a single line summarising what you changed (e.g. 'updated USER.md; forged skill deploy-staq; touched deploy-staq'), or exactly 'Nothing to save.'"
 
 echo "[$(date -u +%FT%TZ)] review START session=$SESSION model=$MODEL transcript=$TRANSCRIPT" >>"$LOG"
 timeout "${MNEMO_REVIEW_TIMEOUT:-300}" env \

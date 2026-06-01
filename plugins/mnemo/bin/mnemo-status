@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""mnemo-status — one-screen view of the compounding loop.
+
+Hermes is a black box: you can't see whether it's actually learning. mnemo
+shows its work — memory pressure, skill effectiveness, and a falsifiable
+compounding signal derived from how often the same correction recurs.
+"""
+import sys, os, re, json, subprocess
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+SKILLS_DIR = Path(os.environ.get("MNEMO_SKILLS_DIR", str(Path.home() / ".claude" / "skills")))
+PLUGIN_ROOT = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)))
+CAPS = {"USER.md": 1375, "MEMORY.md": 2200}
+_TTY = sys.stdout.isatty()
+
+
+def _b(s):
+    return f"\033[1m{s}\033[0m" if _TTY else s
+
+STOP = set("the a an and or but if then to of in on for with at by from is are was "
+           "were be been being this that these those it its as you your i we they "
+           "do dont don't not no yes can cant could would should will just like "
+           "me my our use used using stop again why how what when where also get "
+           "got had has have so too very more most them he she his her there here".split())
+
+
+def _bar(cur, cap, width=24):
+    pct = min(100, int(cur / cap * 100)) if cap else 0
+    filled = int(width * min(cur, cap) / cap) if cap else 0
+    return f"[{'█' * filled}{'·' * (width - filled)}] {pct:>3}%  {cur}/{cap}"
+
+
+def _salient(text):
+    """Set of salient tokens for topic matching (robust to filler words)."""
+    toks = re.findall(r"[a-z][a-z0-9'+-]{2,}", text.lower())
+    return {t for t in toks if t not in STOP and len(t) > 3}
+
+
+def _same_topic(a, b):
+    """Two corrections are the same topic if their salient sets overlap enough."""
+    if not a or not b:
+        return False
+    inter = len(a & b)
+    union = len(a | b)
+    return inter >= 2 and union and (inter / union) >= 0.4
+
+
+def _label(toks, text):
+    return " ".join(sorted(toks)[:5]) if toks else text.strip().lower()[:40]
+
+
+def _load_corrections():
+    p = HOME / "corrections.jsonl"
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        ts = d.get("ts")
+        try:
+            when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            when = None
+        txt = d.get("text", "")
+        toks = _salient(txt)
+        out.append({"when": when, "text": txt, "toks": toks, "fp": _label(toks, txt)})
+    return out
+
+
+def _section(title):
+    print(f"\n{_b(title)}")
+
+
+def main():
+    print(_b("🧠 mnemo — compounding status"))
+    print(f"   store: {HOME}")
+    if (HOME / "OFF").exists():
+        print("   \033[33m⏸  PAUSED (~/.mnemo/OFF present)\033[0m")
+
+    # --- Memory pressure ---
+    _section("memory")
+    for fname, cap in CAPS.items():
+        p = HOME / fname
+        cur = len(p.read_text(encoding="utf-8")) if p.exists() else 0
+        label = "user-model" if fname == "USER.md" else "agent-notes"
+        print(f"  {label:<11} {_bar(cur, cap)}")
+    soul = HOME / "SOUL.md"
+    print(f"  soul        {'set' if soul.exists() and soul.read_text().strip() else 'empty'}")
+
+    # --- Forged skills (effectiveness) ---
+    _section("forged skills (effectiveness)")
+    try:
+        out = subprocess.run([sys.executable, str(PLUGIN_ROOT / "bin" / "mnemo-skill"), "list"],
+                             capture_output=True, text=True, timeout=10,
+                             env={**os.environ, "MNEMO_SKILLS_DIR": str(SKILLS_DIR)})
+        body = (out.stdout or "").rstrip()
+        print("\n".join("  " + l for l in body.splitlines()) if body else "  (none)")
+    except Exception as e:
+        print(f"  (skill list unavailable: {e})")
+
+    # --- Compounding signal ---
+    _section("compounding signal (corrections)")
+    corr = _load_corrections()
+    if not corr:
+        print("  no corrections logged yet — signal appears once mnemo sees a few")
+    else:
+        total = len(corr)
+        # Topic clustering by salient-set overlap (robust to filler words).
+        clusters = []  # each: {"toks": set, "count": int, "label": str}
+        repeats = 0
+        for c in corr:
+            hit = next((cl for cl in clusters if _same_topic(cl["toks"], c["toks"])), None)
+            if hit:
+                hit["count"] += 1
+                hit["toks"] |= c["toks"]
+                repeats += 1
+            else:
+                clusters.append({"toks": set(c["toks"]), "count": 1, "label": c["fp"]})
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        recent = [c for c in corr if c["when"] and c["when"] >= cutoff]
+        earlier = [c for c in corr if c["when"] and c["when"] < cutoff]
+        recent_rep = sum(1 for c in recent
+                         if any(_same_topic(c["toks"], e["toks"]) for e in earlier))
+        rr = f"{recent_rep}/{len(recent)}" if recent else "0/0"
+        verdict = ("✅ compounding (recent corrections rarely repeat old ones)"
+                   if recent and recent_rep / len(recent) < 0.34 else
+                   "⚠ same topics keep recurring — the loop isn't sticking yet"
+                   if recent else "— (no corrections in last 7d)")
+        print(f"  corrections logged : {total}   (distinct topics: {len(clusters)})")
+        print(f"  all-time repeats   : {repeats}")
+        print(f"  last 7d            : {rr} recent corrections repeat an older topic  {verdict}")
+        top = sorted(clusters, key=lambda cl: -cl["count"])[:3]
+        rep = [f'"{cl["label"]}" ×{cl["count"]}' for cl in top if cl["count"] > 1]
+        if rep:
+            print(f"  most-repeated      : {', '.join(rep)}")
+
+    # --- Curiosity ---
+    _section("curiosity")
+    props = sorted((HOME / "curiosity").glob("*.md")) if (HOME / "curiosity").exists() else []
+    print(f"  proposals pending review: {len(props)}")
+    if props:
+        print(f"  latest: {props[-1].name}  ({HOME}/curiosity/)")
+
+    # --- Last runs ---
+    _section("last activity")
+    for log, label in [("review.log", "review"), ("curiosity.log", "curiosity")]:
+        p = HOME / "logs" / log
+        last = ""
+        if p.exists():
+            lines = [l for l in p.read_text(encoding="utf-8").splitlines() if "DONE" in l]
+            last = lines[-1] if lines else (p.read_text().splitlines() or [""])[-1]
+        print(f"  {label:<10} {last[:96] if last else '(never run)'}")
+    pruned = list((HOME / "pruned").glob("*")) if (HOME / "pruned").exists() else []
+    if pruned:
+        print(f"  pruned skills (graveyard): {len(pruned)}  ({HOME}/pruned/)")
+    print()
+
+
+if __name__ == "__main__":
+    main()

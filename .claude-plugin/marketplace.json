@@ -2,8 +2,8 @@
   "name": "mnemo",
   "owner": { "name": "Arnav Maurya" },
   "metadata": {
-    "description": "mnemo — the compounding memory loop for Claude Code",
-    "version": "0.1.0"
+    "description": "mnemo — the measured compounding memory loop for Claude Code",
+    "version": "0.2.0"
   },
   "plugins": [
     {

@@ -25,3 +25,22 @@ What to avoid:
   single honest line saying so and stop — that's a valid outcome.
 
 Pick the thing a sharp, curious colleague would actually flag.
+
+## Make it applyable
+
+Whenever the fix is mechanical (an edit to existing files, a new skill file, a
+config change), END the proposal with a fenced block tagged ```apply containing
+the EXACT shell commands that perform it — so the human can apply it with one
+command (`mnemo apply <this-file>`). Use precise, idempotent commands; prefer
+writing complete files via heredocs or targeted `python3`/`sed` edits with
+enough surrounding context to be unambiguous. Example:
+
+    ```apply
+    # fix: ship-feature must deploy via git push, not vercel --prod
+    sed -i 's#vercel deploy --prod --yes#git push origin main  # Vercel auto-deploys#' \
+      "$HOME/.claude/skills/ship-feature/SKILL.md"
+    ```
+
+If the change is a judgment call rather than mechanical, skip the block and keep
+it advisory — never fabricate an apply block for something that needs a human
+decision.

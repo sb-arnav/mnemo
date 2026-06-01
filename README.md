@@ -21,6 +21,35 @@ The memory model is ported from Hermes (MIT): two bounded, `§`-delimited stores
 **Bounded on purpose** — the cap forces prioritisation, which is why the memory
 stays sharp instead of becoming a dump.
 
+## Better than a blind loop: mnemo *measures itself*
+
+Hermes (and every prior-art Claude Code memory plugin) writes memory and forges
+skills **without ever checking whether any of it helped.** mnemo closes that loop:
+
+- **Skill effectiveness** — every forged skill tracks `uses` / `last-used` /
+  `contradicted`. The review worker bumps usage when a skill actually fired, and
+  when a new correction contradicts a forged skill it **flags and fixes it**
+  instead of silently keeping wrong knowledge.
+- **Garbage collection** — `mnemo skill gc` prunes skills that never fire or got
+  contradicted, to a revertable graveyard. The library stays sharp at scale.
+- **A falsifiable compounding signal** — `mnemo status` reports how often recent
+  corrections repeat an older topic. Trending down = the loop is genuinely
+  sticking. Hermes asks you to take "it compounds" on faith; mnemo shows the number.
+- **Curiosity that acts** — proposals ship with a one-command `apply` block, so a
+  finding becomes a fix (`mnemo apply <proposal>`), dry-run by default.
+
+```
+$ mnemo status
+🧠 mnemo — compounding status
+memory
+  user-model  [████····················]  16%  231/1375
+  agent-notes [██████··················]  26%  591/2200
+forged skills (effectiveness)
+  deploy-staq     2  2026-06-08  2026-06-01
+compounding signal (corrections)
+  last 7d  1/3 recent corrections repeat an older topic  ✅ compounding
+```
+
 ## Why it's safe (and not just "a self-modifying agent")
 
 Self-improving agents drift. mnemo is built so it can't drift far:

@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""mnemo — front-door CLI for the compounding loop.
+
+  mnemo status                 one-screen dashboard (memory, skills, compounding)
+  mnemo mem    ...             memory store (add/replace/remove/show)
+  mnemo skill  ...             forged-skill effectiveness (list/touch/flag/gc)
+  mnemo apply  <proposal>      apply a curiosity proposal's change block (dry-run by default)
+  mnemo curiosity              run the curiosity loop now
+  mnemo gc [--apply]           prune dead/contradicted forged skills
+  mnemo on | off               resume / pause the whole loop
+"""
+import sys, os, re, subprocess
+from pathlib import Path
+
+ROOT = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)))
+BIN, SCRIPTS = ROOT / "bin", ROOT / "scripts"
+HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+
+
+def _run(args):
+    raise SystemExit(subprocess.call(args))
+
+
+def _apply(argv):
+    yes = "--yes" in argv
+    names = [a for a in argv if a != "--yes"]
+    if not names:
+        sys.exit("usage: mnemo apply <proposal.md> [--yes]")
+    path = Path(names[0])
+    if not path.exists():
+        alt = HOME / "curiosity" / Path(names[0]).name
+        if alt.exists():
+            path = alt
+    if not path.exists():
+        sys.exit(f"no proposal at {path}")
+    text = path.read_text(encoding="utf-8")
+    m = re.search(r"```apply\s*\n(.*?)```", text, re.S)
+    if not m:
+        sys.exit("no ```apply block — this proposal is advisory-only; apply it by hand")
+    block = m.group(1).strip()
+    print("── apply block ──")
+    print(block)
+    print("─────────────────")
+    if not yes:
+        print("\ndry-run. nothing changed. re-run with --yes to execute.")
+        return
+    print("\nexecuting…")
+    raise SystemExit(subprocess.call(["bash", "-c", block]))
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        a = ["status"]
+    c = a[0]
+    if c == "status":
+        _run([sys.executable, str(BIN / "mnemo-status")])
+    elif c == "mem":
+        _run([sys.executable, str(BIN / "mnemo-mem")] + a[1:])
+    elif c == "skill":
+        _run([sys.executable, str(BIN / "mnemo-skill")] + a[1:])
+    elif c == "gc":
+        _run([sys.executable, str(BIN / "mnemo-skill"), "gc"] + a[1:])
+    elif c == "apply":
+        _apply(a[1:])
+    elif c == "curiosity":
+        _run(["bash", str(SCRIPTS / "curiosity.sh")])
+    elif c == "off":
+        HOME.mkdir(parents=True, exist_ok=True)
+        (HOME / "OFF").touch()
+        print("mnemo paused — remove ~/.mnemo/OFF (or `mnemo on`) to resume")
+    elif c == "on":
+        try:
+            (HOME / "OFF").unlink()
+        except FileNotFoundError:
+            pass
+        print("mnemo active")
+    else:
+        sys.exit(f"unknown command '{c}'. try: status mem skill apply curiosity gc on off")
+
+
+if __name__ == "__main__":
+    main()
