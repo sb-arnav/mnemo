@@ -272,6 +272,74 @@ def cmd_eval_record(a):
     print(f"eval recorded: {rec['passed']}/{rec['total']} probes held ({rate}%)")
 
 
+# --- Phase 4: human trust surface (quarantine review) ----------------------
+
+def cmd_quarantine_list(a):
+    any_ = False
+    for r in _load():
+        if r["status"] == "quarantined":
+            any_ = True
+            p = r["provenance"]
+            print(f'{r["id"]}  {r["type"]}/{r["target"]}  [{p["trigger"]}]  '
+                  f'reason: {r.get("reason","?")}\n      lesson: {r["text"][:140]}')
+    if not any_:
+        print("(quarantine is empty)")
+
+
+def _restore_to_store(rec):
+    """Inverse of _remove_from_store — put a released lesson back in the live store."""
+    if rec["type"] == "memory":
+        membin = Path(__file__).resolve().parent / "mnemo-mem"
+        stash = QUARANTINE / f"{rec['id']}.txt"
+        txt = stash.read_text(encoding="utf-8") if stash.exists() else rec.get("text", "")
+        try:
+            subprocess.run([sys.executable, str(membin), "add", rec["target"], txt],
+                           capture_output=True, text=True, timeout=10,
+                           env={**os.environ, "MNEMO_HOME": str(HOME)})
+        except Exception:
+            pass
+        if stash.exists():
+            stash.unlink()
+    elif rec["type"] == "skill":
+        src = QUARANTINE / "skills" / rec["target"]
+        if src.exists():
+            dst = SKILLS_DIR / rec["target"]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.move(str(src), str(dst))
+
+
+def cmd_release(a):
+    """Human vouches for a quarantined lesson: restore it to the live store."""
+    records = _load()
+    r = _find(records, a.id)
+    if r["status"] != "quarantined":
+        sys.exit(f"error: {a.id} is not quarantined")
+    _restore_to_store(r)
+    r["status"] = "active"
+    r["trust"] = max(r["trust"], TRUST_THRESHOLD + 5)
+    r["verification"] = {"verdict": "released", "at": _now(), "by": "human"}
+    r["reason"] = ""
+    _save(records)
+    print(f"{r['id']} RELEASED → live store, trust={r['trust']}")
+
+
+def cmd_discard(a):
+    """Permanently drop a quarantined lesson (already out of the live store)."""
+    records = _load()
+    r = _find(records, a.id)
+    stash = QUARANTINE / f"{r['id']}.txt"
+    if stash.exists():
+        stash.unlink()
+    skill_stash = QUARANTINE / "skills" / r["target"]
+    if r["type"] == "skill" and skill_stash.exists():
+        shutil.rmtree(skill_stash)
+    records = [x for x in records if x["id"] != r["id"]]
+    _save(records)
+    print(f"{a.id} discarded")
+
+
 def main():
     p = argparse.ArgumentParser(prog="mnemo-lesson")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -302,6 +370,10 @@ def main():
     pb = sub.add_parser("probes"); pb.set_defaults(fn=cmd_probes)
     prr = sub.add_parser("probe-result"); prr.set_defaults(fn=cmd_probe_result); prr.add_argument("id"); prr.add_argument("result", choices=["pass", "fail"])
     er = sub.add_parser("eval-record"); er.set_defaults(fn=cmd_eval_record); er.add_argument("--total", required=True); er.add_argument("--passed", required=True)
+
+    ql = sub.add_parser("quarantine-list"); ql.set_defaults(fn=cmd_quarantine_list)
+    rel = sub.add_parser("release"); rel.set_defaults(fn=cmd_release); rel.add_argument("id")
+    dis = sub.add_parser("discard"); dis.set_defaults(fn=cmd_discard); dis.add_argument("id")
 
     a = p.parse_args()
     a.fn(a)

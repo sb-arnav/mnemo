@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""mnemo — front-door CLI for the compounding loop.
+"""mnemo — front-door CLI for the trust layer.
 
-  mnemo status                 one-screen dashboard (memory, skills, compounding)
-  mnemo mem    ...             memory store (add/replace/remove/show)
-  mnemo skill  ...             forged-skill effectiveness (list/touch/flag/gc)
-  mnemo apply  <proposal>      apply a curiosity proposal's change block (dry-run by default)
-  mnemo curiosity              run the curiosity loop now
-  mnemo gc [--apply]           prune dead/contradicted forged skills
-  mnemo on | off               resume / pause the whole loop
+  mnemo status                       dashboard: memory, trust registry, probe replay, compounding
+  mnemo mem    ...                   memory store (add/replace/remove/show)
+  mnemo trust                        list every lesson with its provenance + trust score
+  mnemo quarantine [list]            lessons the verifier held back, with reasons
+  mnemo quarantine release <id>      vouch for a held lesson → restore it to the live store
+  mnemo quarantine discard <id>      permanently drop a held lesson
+  mnemo lesson ...                   low-level registry (register/verify/probes/...)
+  mnemo eval                         replay probes now (did learning still hold?)
+  mnemo curiosity                    run the curiosity loop now
+  mnemo apply  <proposal>            apply a curiosity proposal's change block (dry-run by default)
+  mnemo on | off                     resume / pause the whole loop
 """
 import sys, os, re, subprocess
 from pathlib import Path
@@ -61,14 +65,20 @@ def main():
         _run([sys.executable, str(BIN / "mnemo-lesson")] + a[1:])
     elif c == "trust":
         _run([sys.executable, str(BIN / "mnemo-lesson"), "list"] + a[1:])
-    elif c == "skill":
-        _run([sys.executable, str(BIN / "mnemo-skill")] + a[1:])
+    elif c == "eval":
+        _run(["bash", str(SCRIPTS / "eval.sh")])
+    elif c == "quarantine":
+        sub2 = a[1] if len(a) > 1 else "list"
+        if sub2 == "list":
+            _run([sys.executable, str(BIN / "mnemo-lesson"), "quarantine-list"])
+        elif sub2 in ("release", "discard"):
+            _run([sys.executable, str(BIN / "mnemo-lesson"), sub2] + a[2:])
+        else:
+            sys.exit("usage: mnemo quarantine [list | release <id> | discard <id>]")
     elif c == "apply":
         _apply(a[1:])
     elif c == "curiosity":
         _run(["bash", str(SCRIPTS / "curiosity.sh")])
-    elif c == "eval":
-        _run(["bash", str(SCRIPTS / "eval.sh")])
     elif c == "off":
         HOME.mkdir(parents=True, exist_ok=True)
         (HOME / "OFF").touch()

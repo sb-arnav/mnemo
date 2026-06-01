@@ -1,66 +1,68 @@
 ---
 name: mnemo
-description: Use when the user asks what mnemo is, what the agent has learned/remembered about them, how well it's compounding, or wants to inspect, edit, pause, prune, or tune the self-improving loop (memory, user model, forged skills, effectiveness, curiosity proposals).
+description: Use when the user asks what mnemo is, what the agent has learned/remembered about them, why a lesson was quarantined or held, how much to trust what it learned, or wants to inspect, release, pause, or tune the self-improving trust loop (memory, provenance, verification, probes, curiosity).
 ---
 
-# mnemo — the measured compounding loop
+# mnemo — the trust layer for agent self-improvement
 
-mnemo gives Claude Code what people leave for Hermes Agent: a closed learning
-loop that runs on autopilot so the agent **compounds** instead of forgetting you
-— but unlike Hermes, mnemo *measures* whether its learning actually helps and
-prunes what doesn't. Three loops:
+mnemo makes Claude Code **compound** (cross-session memory + self-forged skills),
+but unlike Hermes and every other self-improving agent it **verifies and
+evaluates what it learns** so you can trust it didn't learn something wrong. It
+runs natively in your repo, on your own subscription, via the real `claude`
+binary in hooks. Every lesson (a memory entry or a forged skill) flows through:
 
-1. **Memory curation** (Stop / SessionEnd → background review worker): after a
-   session, a `claude -p` worker reads the transcript and writes what mattered
-   to a bounded store, injected back at the next SessionStart.
-2. **Skill forging + effectiveness** (same worker): corrections and techniques
-   become real Claude Code skills. Each forged skill tracks `uses` / `last-used`
-   / `contradicted`; the worker bumps usage when a skill fired and flags (then
-   fixes) any skill a new correction contradicts.
-3. **Curiosity** (scheduled, 04:30 daily): researches one weak/stale area and
-   writes an improvement *proposal* — often with a one-command `apply` block.
+1. **Write + provenance** (Stop / SessionEnd → review worker): a `claude -p`
+   worker reads the finished transcript, writes lessons, and registers each with
+   provenance (session, trigger, web-influence) + a base **trust score**.
+2. **Independent verification** (chained `verify.sh`): a *separate* agent
+   challenges each lesson — durable vs env-artifact, contradiction,
+   web-poisoning, regression — and **quarantines** failures (pulling them from
+   the live store). The writer can't verify its own drift; this agent can.
+3. **Trust-gated injection** (SessionStart): only lessons at/above the trust
+   threshold are injected. Low-trust / quarantined lessons are held back.
+4. **Probe replay** (`eval.sh`, scheduled/on-demand): each lesson carries a tiny
+   yes/no probe; replay re-checks it still holds, dropping trust on drift.
+5. **Curiosity** (scheduled): researches one weak area, proposes an improvement
+   (often with a one-command `apply` block).
 
-## The `mnemo` CLI (front door)
+## The `mnemo` CLI
 
 ```bash
-mnemo status                # dashboard: memory pressure, skill hit-rates, compounding signal
-mnemo mem show user         # inspect the user model / agent notes
-mnemo mem add user "..."    # add/replace/remove (enforces §-format + char caps)
-mnemo skill list            # forged skills + usage/contradiction flags
-mnemo skill gc [--apply]    # prune dead (unused N days) + contradicted skills → ~/.mnemo/pruned/
-mnemo apply <proposal.md>   # apply a curiosity proposal's change block (dry-run; add --yes to execute)
-mnemo curiosity             # run the curiosity loop now
-mnemo off | on              # pause / resume the whole loop
+mnemo status                      # dashboard: memory, trust registry, probe replay, compounding
+mnemo trust                       # every lesson with provenance + trust score
+mnemo quarantine list             # lessons the verifier held back, with reasons
+mnemo quarantine release <id>     # vouch for one → restore it to the live store
+mnemo quarantine discard <id>     # permanently drop one
+mnemo eval                        # replay probes now (did learning still hold?)
+mnemo mem show user|memory        # inspect the bounded stores
+mnemo curiosity                   # run the curiosity loop now
+mnemo on | off                    # resume / pause the whole loop
 ```
 
-(If `mnemo` isn't on PATH: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/mnemo ...`, or
-`~/mnemo/plugins/mnemo/bin/mnemo ...`.)
+(If `mnemo` isn't on PATH: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/mnemo ...`.)
 
-## Where things live
+## Where things live (all git-trackable, auditable, revertable)
 
-- `~/.mnemo/USER.md` — the user model (cap 1375 chars).
-- `~/.mnemo/MEMORY.md` — agent notes: environment, conventions, lessons (cap 2200).
-- `~/.mnemo/SOUL.md` — stable operating personality, injected every session.
-- `~/.mnemo/corrections.jsonl` — live-captured corrections (feeds the compounding metric).
-- `~/.mnemo/curiosity/` — dated proposals; `~/.mnemo/pruned/` — graveyard of GC'd skills.
-- `~/.mnemo/logs/` — review.log, curiosity.log, skill-flags.log.
-- Forged skills → `~/.claude/skills/<name>/` with `forged-by: mnemo` frontmatter.
+- `~/.mnemo/USER.md` (1375 chars) · `MEMORY.md` (2200) · `SOUL.md` — the stores.
+- `~/.mnemo/lessons.json` — the trust registry (provenance, trust, verification, probe).
+- `~/.mnemo/quarantine/` — held lessons + stashed copies (release-able).
+- `~/.mnemo/eval-history.jsonl` — probe pass-rate over time.
+- `~/.mnemo/corrections.jsonl` · `curiosity/` · `logs/` (review/verify/eval/curiosity).
+- Forged skills → `~/.claude/skills/<name>/` with `forged-by: mnemo`.
 
-## What makes it *measured* (the edge over Hermes)
+## Trust scoring
 
-- Forged skills carry effectiveness metadata; ones that never fire or get
-  contradicted are surfaced by `mnemo skill gc` and pruned (revertably).
-- `mnemo status` shows a **falsifiable compounding signal**: how often recent
-  corrections repeat an older topic. Trending down = the loop is sticking.
+Base from provenance: correction 85, technique 65, web-research 45 (−20 if the
+session used the web). The verifier may raise it (clear correction) or quarantine
+(poisoning / contradiction). A failed probe drops it 25. Below
+`MNEMO_TRUST_THRESHOLD` (default 50) → held from injection.
 
 ## Safety invariants
 
-- mnemo only writes its own store and skills it forged (`forged-by: mnemo`); it
-  never edits human-authored skills, CLAUDE.md, or settings.
-- The review worker sets `MNEMO_REVIEWING=1`, so every mnemo hook no-ops inside
-  it — no recursion.
-- Memory is bounded by design; curiosity is advisory (`apply` is opt-in, dry-run
-  by default). Everything is plain markdown in git-trackable dirs — auditable and
-  revertable.
-- Tune: `MNEMO_NUDGE_INTERVAL` (8), `MNEMO_MIN_TURNS` (3), `MNEMO_GC_DAYS` (21),
-  `MNEMO_REVIEW_MODEL` (claude-sonnet-4-6).
+- mnemo only writes its own store + skills it forged; never edits human skills,
+  CLAUDE.md, or settings.
+- Verification is **independent** (separate `claude -p`, `MNEMO_REVIEWING`-guarded
+  so it can't recurse). The writer never signs off its own work.
+- Memory is bounded; quarantine + release keep self-modification reversible.
+- Pause: `touch ~/.mnemo/OFF` (or `mnemo off`). Tune: `MNEMO_TRUST_THRESHOLD`,
+  `MNEMO_NUDGE_INTERVAL`, `MNEMO_REVIEW_MODEL`, `MNEMO_VERIFY_MODEL`, `MNEMO_EVAL_MODEL`.

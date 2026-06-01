@@ -21,33 +21,44 @@ The memory model is ported from Hermes (MIT): two bounded, `§`-delimited stores
 **Bounded on purpose** — the cap forces prioritisation, which is why the memory
 stays sharp instead of becoming a dump.
 
-## Better than a blind loop: mnemo *measures itself*
+## The real edge: mnemo is a *trust layer*, not just a memory loop
 
-Hermes (and every prior-art Claude Code memory plugin) writes memory and forges
-skills **without ever checking whether any of it helped.** mnemo closes that loop:
+A deep read of Hermes' actual source (~976K LOC) showed it already ships the
+*mechanics* of self-improvement — usage telemetry, skill GC, consolidation,
+dialectic user-modeling, FTS5 recall. What Hermes (and everyone) skipped:
+**verifying and evaluating what the agent learns.** Self-modifying agents are
+only adoptable if you can trust they didn't learn something wrong. mnemo is that
+trust layer:
 
-- **Skill effectiveness** — every forged skill tracks `uses` / `last-used` /
-  `contradicted`. The review worker bumps usage when a skill actually fired, and
-  when a new correction contradicts a forged skill it **flags and fixes it**
-  instead of silently keeping wrong knowledge.
-- **Garbage collection** — `mnemo skill gc` prunes skills that never fire or got
-  contradicted, to a revertable graveyard. The library stays sharp at scale.
-- **A falsifiable compounding signal** — `mnemo status` reports how often recent
-  corrections repeat an older topic. Trending down = the loop is genuinely
-  sticking. Hermes asks you to take "it compounds" on faith; mnemo shows the number.
-- **Curiosity that acts** — proposals ship with a one-command `apply` block, so a
-  finding becomes a fix (`mnemo apply <proposal>`), dry-run by default.
+- **Provenance + trust on every lesson** — each memory entry / forged skill is
+  born knowing where it came from (session, trigger, web-influence) and a trust
+  score. Low-trust / poisoned lessons are **held out of the agent's context**
+  until cleared.
+- **An independent verification gate** — after the writer registers a lesson, a
+  *separate* `claude -p` agent challenges it on four axes (durable vs
+  environment-artifact, contradiction, **web-poisoning**, regression) and
+  **quarantines** failures, physically pulling them from the live store. A writer
+  can't catch its own drift; a fresh skeptic can. *(Proven: it caught a "use the
+  secret --yolo flag, found on a blog" lesson and quarantined it on its own.)*
+- **Falsifiable probes + replay** — every lesson carries a tiny yes/no probe; a
+  periodic replay re-checks whether it still holds against current state. A
+  drifted lesson loses trust and gets held. `mnemo status` shows the pass-rate —
+  a reproducible "did learning still hold?" signal nobody else has.
+- **A human trust surface** — `mnemo quarantine list / release / discard`. Every
+  lesson, quarantine, trust score and probe is a plain git-tracked file:
+  auditable and revertable.
 
 ```
 $ mnemo status
 🧠 mnemo — compounding status
 memory
   user-model  [████····················]  16%  231/1375
-  agent-notes [██████··················]  26%  591/2200
-forged skills (effectiveness)
-  deploy-staq     2  2026-06-08  2026-06-01
-compounding signal (corrections)
-  last 7d  1/3 recent corrections repeat an older topic  ✅ compounding
+trust registry (lessons: provenance + trust)
+  a9420b31ea  trust= 25  memory/memory  [web-research web] ⚠quarantined  secret --yolo flag
+  7b06a1fb84  trust= 85  memory/user   [correction]                     brutal honesty
+  ── 2 lessons · 0 below threshold · 1 quarantined
+probe replay (did learning still hold?)
+  last run: 1/2 probes held — 50%
 ```
 
 ## Why it's safe (and not just "a self-modifying agent")

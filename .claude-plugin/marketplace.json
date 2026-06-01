@@ -2,14 +2,14 @@
   "name": "mnemo",
   "owner": { "name": "Arnav Maurya" },
   "metadata": {
-    "description": "mnemo — the measured compounding memory loop for Claude Code",
-    "version": "0.2.0"
+    "description": "mnemo — the trust layer for AI agent self-improvement, native to Claude Code",
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "mnemo",
       "source": "./plugins/mnemo",
-      "description": "Auto-curated cross-session memory + a user model + skills your agent writes for itself. The Hermes self-improving loop, native to Claude Code — bounded, auditable, on your own subscription."
+      "description": "Self-improving memory + skills for Claude Code where you can trust what it learned: every lesson carries provenance + a trust score, is challenged by an independent verifier before it sticks (poisoned ones quarantined), and is re-checked by a falsifiable probe. Bounded, auditable, on your own subscription."
     }
   ]
 }

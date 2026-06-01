@@ -1,9 +1,9 @@
 {
   "name": "mnemo",
-  "description": "A measured self-improving loop for Claude Code: auto-curated cross-session memory, a user model, skills the agent writes for itself with effectiveness tracking + GC, and a falsifiable compounding signal — bounded, auditable, powered by your own subscription.",
-  "version": "0.2.0",
+  "description": "The trust layer for AI agent self-improvement, native to Claude Code: auto-curated cross-session memory and self-forged skills, but every lesson carries provenance + a trust score, is challenged by an independent verifier before it sticks (poisoned ones quarantined), and is re-checked by a falsifiable probe. Bounded, auditable, on your own subscription.",
+  "version": "0.3.0",
   "author": { "name": "Arnav Maurya" },
   "license": "MIT",
-  "keywords": ["memory", "skills", "self-improving", "learning-loop", "hermes"],
+  "keywords": ["memory", "skills", "self-improving", "verification", "trust", "agent-safety", "hermes"],
   "hooks": "./hooks/hooks.json"
 }
