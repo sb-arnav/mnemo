@@ -80,4 +80,8 @@ timeout "${MNEMO_REVIEW_TIMEOUT:-300}" env \
     "$USER_MSG" </dev/null >>"$LOG" 2>&1
 rc=$?
 echo "[$(date -u +%FT%TZ)] review DONE  session=$SESSION rc=$rc" >>"$LOG"
+
+# Phase 2 — independent verification gate over the lessons just registered.
+# Separate process + separate prompt so the writer can't verify its own drift.
+bash "$PLUGIN_ROOT/scripts/verify.sh" "$SESSION" "$TRANSCRIPT" >/dev/null 2>&1 || true
 exit 0

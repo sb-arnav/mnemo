@@ -28,12 +28,14 @@ Usage:
   mnemo-lesson below <threshold> [--type memory]       # texts of registered lessons below threshold (for inject filtering)
   mnemo-lesson threshold                               # print the inject trust threshold
 """
-import sys, os, json, hashlib, argparse
+import sys, os, json, hashlib, argparse, subprocess, shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
 HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+SKILLS_DIR = Path(os.environ.get("MNEMO_SKILLS_DIR", str(Path.home() / ".claude" / "skills")))
 STORE = HOME / "lessons.json"
+QUARANTINE = HOME / "quarantine"
 TRUST_THRESHOLD = int(os.environ.get("MNEMO_TRUST_THRESHOLD", "50"))  # below this → held from auto-inject
 
 
@@ -168,6 +170,66 @@ def cmd_threshold(a):
     print(TRUST_THRESHOLD)
 
 
+# --- Phase 2: the verification gate ----------------------------------------
+
+def cmd_unverified(a):
+    """Active lessons the independent verifier hasn't ruled on yet."""
+    any_ = False
+    for r in _load():
+        if r["status"] == "active" and r.get("verification") is None:
+            any_ = True
+            p = r["provenance"]
+            web = " web" if p.get("web_influence") else ""
+            print(f'{r["id"]}  {r["type"]}/{r["target"]}  [{p["trigger"]}{web}]  '
+                  f'key="{r["key"]}"  text="{r["text"][:140]}"')
+    if not any_:
+        print("(none)")
+
+
+def cmd_verify(a):
+    records = _load()
+    r = _find(records, a.id)
+    r["verification"] = {"verdict": "pass", "at": _now()}
+    if a.trust is not None:
+        r["trust"] = max(0, min(100, int(a.trust)))
+    _save(records)
+    print(f"{r['id']} verified pass trust={r['trust']}")
+
+
+def _remove_from_store(rec):
+    """Physically pull a quarantined lesson out of the live store so it can no
+    longer be injected or auto-loaded. Stash a copy under ~/.mnemo/quarantine/."""
+    QUARANTINE.mkdir(parents=True, exist_ok=True)
+    if rec["type"] == "memory":
+        membin = Path(__file__).resolve().parent / "mnemo-mem"
+        try:
+            subprocess.run([sys.executable, str(membin), "remove", rec["target"], rec["key"]],
+                           capture_output=True, text=True, timeout=10,
+                           env={**os.environ, "MNEMO_HOME": str(HOME)})
+        except Exception:
+            pass
+        (QUARANTINE / f"{rec['id']}.txt").write_text(rec.get("text", ""), encoding="utf-8")
+    elif rec["type"] == "skill":
+        src = SKILLS_DIR / rec["target"]
+        if src.exists():
+            dst = QUARANTINE / "skills" / rec["target"]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.move(str(src), str(dst))
+
+
+def cmd_quarantine(a):
+    records = _load()
+    r = _find(records, a.id)
+    r["verification"] = {"verdict": "quarantine", "at": _now(), "reason": a.reason}
+    r["status"] = "quarantined"
+    r["reason"] = a.reason
+    _remove_from_store(r)
+    _save(records)
+    print(f"{r['id']} QUARANTINED + removed from live store: {a.reason}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="mnemo-lesson")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -188,6 +250,10 @@ def main():
     to = sub.add_parser("trust-of"); to.set_defaults(fn=cmd_trust_of); to.add_argument("--type", required=True, choices=["memory", "skill"]); to.add_argument("--key", required=True)
     b = sub.add_parser("below"); b.set_defaults(fn=cmd_below); b.add_argument("threshold", type=int); b.add_argument("--type", choices=["memory", "skill"])
     th = sub.add_parser("threshold"); th.set_defaults(fn=cmd_threshold)
+
+    uv = sub.add_parser("unverified"); uv.set_defaults(fn=cmd_unverified)
+    vf = sub.add_parser("verify"); vf.set_defaults(fn=cmd_verify); vf.add_argument("id"); vf.add_argument("--trust", default=None)
+    q = sub.add_parser("quarantine"); q.set_defaults(fn=cmd_quarantine); q.add_argument("id"); q.add_argument("--reason", required=True)
 
     a = p.parse_args()
     a.fn(a)
