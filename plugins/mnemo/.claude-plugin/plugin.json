@@ -4,6 +4,5 @@
   "version": "0.4.0",
   "author": { "name": "mnemo contributors" },
   "license": "MIT",
-  "keywords": ["memory", "skills", "self-improving", "verification", "trust", "agent-safety", "session-search", "recall", "curator", "hermes"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": ["memory", "skills", "self-improving", "verification", "trust", "agent-safety", "session-search", "recall", "curator", "hermes"]
 }
