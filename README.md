@@ -21,14 +21,25 @@ The memory model is ported from Hermes (MIT): two bounded, `§`-delimited stores
 **Bounded on purpose** — the cap forces prioritisation, which is why the memory
 stays sharp instead of becoming a dump.
 
-## The real edge: mnemo is a *trust layer*, not just a memory loop
+## Parity with the Hermes *mechanics* — then past them
 
-A deep read of Hermes' actual source (~976K LOC) showed it already ships the
-*mechanics* of self-improvement — usage telemetry, skill GC, consolidation,
-dialectic user-modeling, FTS5 recall. What Hermes (and everyone) skipped:
-**verifying and evaluating what the agent learns.** Self-modifying agents are
-only adoptable if you can trust they didn't learn something wrong. mnemo is that
-trust layer:
+mnemo now ports the mechanics that made Hermes feel like it compounds, rebuilt as
+Claude Code-native tools:
+
+| Hermes mechanic | mnemo |
+|---|---|
+| FTS5 episodic recall (`session_search`) | **`mnemo recall`** — FTS5 over every past transcript; search / scroll / browse; a bundled `mnemo-recall` skill so the agent reaches for it; auto-indexed on `SessionEnd`. |
+| Skill consolidation / GC | **the curator** (`mnemo curator`) — merges forged skills into class-level umbrellas, archives stale ones (never deletes), respects pins. |
+| Skill usage telemetry | **`uses` / `last-used`** bumped by a `PostToolUse` hook; `mnemo skill pin` protects from the curator. |
+| Crons / proactive loops | **`install-cron.sh`** — schedules recall-index, probe replay, curiosity, and the curator. |
+| Bounded curated memory | ported 1:1, plus a deterministic promptware scan, fcntl locking, and a drift guard the original lacks. |
+
+## The real edge: mnemo is also a *trust layer*
+
+A deep read of Hermes' actual source showed it ships those mechanics but skipped
+the one thing that makes a self-modifying agent adoptable: **verifying and
+evaluating what it learns.** mnemo is that trust layer on top of the mechanics
+above:
 
 - **Provenance + trust on every lesson** — each memory entry / forged skill is
   born knowing where it came from (session, trigger, web-influence) and a trust
@@ -54,8 +65,8 @@ $ mnemo status
 memory
   user-model  [████····················]  16%  231/1375
 trust registry (lessons: provenance + trust)
-  a9420b31ea  trust= 25  memory/memory  [web-research web] ⚠quarantined  secret --yolo flag
-  7b06a1fb84  trust= 85  memory/user   [correction]                     brutal honesty
+  a9420b31ea  trust= 25  memory/memory  [web-research web] ⚠quarantined  secret --force flag
+  7b06a1fb84  trust= 85  memory/user   [correction]                     prefers concise replies
   ── 2 lessons · 0 below threshold · 1 quarantined
 probe replay (did learning still hold?)
   last run: 1/2 probes held — 50%

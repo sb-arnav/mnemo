@@ -173,6 +173,43 @@ def main():
         if rep:
             print(f"  most-repeated      : {', '.join(rep)}")
 
+    # --- Skill library (forged skills + lifecycle) ---
+    _section("skill library (forged, with usage/age)")
+    forged = []
+    if SKILLS_DIR.exists():
+        for d in sorted(SKILLS_DIR.iterdir()):
+            sk = d / "SKILL.md"
+            if not sk.is_file():
+                continue
+            try:
+                head = sk.read_text(encoding="utf-8")[:600]
+            except Exception:
+                continue
+            if re.search(r"^forged-by:\s*mnemo", head, re.M | re.I):
+                pinned = bool(re.search(r"^pinned:\s*true", head, re.M | re.I))
+                uses = re.search(r"^uses:\s*(\d+)", head, re.M)
+                forged.append((d.name, int(uses.group(1)) if uses else 0, pinned))
+    if not forged:
+        print("  (no mnemo-forged skills yet)")
+    else:
+        pinned_n = sum(1 for _, _, p in forged if p)
+        unused = sum(1 for _, u, _ in forged if u == 0)
+        print(f"  {len(forged)} forged · {pinned_n} pinned · {unused} never-used")
+        for n, u, p in sorted(forged, key=lambda r: -r[1])[:5]:
+            print(f"    {('📌 ' if p else '   ')}{n:<32} uses={u}")
+        print(f"  consolidate: mnemo curator dry-run   ·   archive at {HOME}/pruned/")
+
+    # --- Episodic recall (FTS5 over past sessions) ---
+    _section("episodic recall (past sessions)")
+    try:
+        out = subprocess.run([sys.executable, str(PLUGIN_ROOT / "bin" / "mnemo-recall"), "stats"],
+                             capture_output=True, text=True, timeout=10,
+                             env={**os.environ, "MNEMO_HOME": str(HOME)})
+        body = (out.stdout or "").strip()
+        print("\n".join("  " + l for l in body.splitlines()) if body else "  (no index yet — `mnemo recall index`)")
+    except Exception as e:
+        print(f"  (recall unavailable: {e})")
+
     # --- Curiosity ---
     _section("curiosity")
     props = sorted((HOME / "curiosity").glob("*.md")) if (HOME / "curiosity").exists() else []

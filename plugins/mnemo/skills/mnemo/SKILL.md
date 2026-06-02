@@ -25,21 +25,36 @@ binary in hooks. Every lesson (a memory entry or a forged skill) flows through:
 5. **Curiosity** (scheduled): researches one weak area, proposes an improvement
    (often with a one-command `apply` block).
 
+Alongside the trust loop, mnemo has full parity with the Hermes *mechanics*:
+
+- **Episodic recall** — FTS5 search over every past session transcript
+  (`mnemo recall`), so the agent can pull back a decision or config from weeks
+  ago instead of asking you to repeat yourself. See the `mnemo-recall` skill.
+- **The curator** — a background pass that consolidates forged skills into
+  class-level umbrellas and archives stale ones (never deletes), so the skill
+  library stays sharp instead of sprawling (`mnemo curator`).
+- **Skill usage telemetry + pinning** — forged skills track `uses`/`last-used`;
+  `mnemo skill pin <name>` protects one from the curator.
+
 ## The `mnemo` CLI
 
 ```bash
-mnemo status                      # dashboard: memory, trust registry, probe replay, compounding
+mnemo status                      # dashboard: memory, recall, skills, trust, probes, compounding
 mnemo trust                       # every lesson with provenance + trust score
 mnemo quarantine list             # lessons the verifier held back, with reasons
 mnemo quarantine release <id>     # vouch for one → restore it to the live store
 mnemo quarantine discard <id>     # permanently drop one
 mnemo eval                        # replay probes now (did learning still hold?)
 mnemo mem show user|memory        # inspect the bounded stores
+mnemo recall search "<query>"     # search past sessions · scroll/browse/index
+mnemo skill list                  # forged skills with usage/age · pin/unpin/stale
+mnemo curator [dry-run]           # consolidate the forged-skill library
 mnemo curiosity                   # run the curiosity loop now
 mnemo on | off                    # resume / pause the whole loop
 ```
 
 (If `mnemo` isn't on PATH: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/mnemo ...`.)
+Schedule the proactive loops with `bash ${CLAUDE_PLUGIN_ROOT}/scripts/install-cron.sh`.
 
 ## Where things live (all git-trackable, auditable, revertable)
 
@@ -47,7 +62,9 @@ mnemo on | off                    # resume / pause the whole loop
 - `~/.mnemo/lessons.json` — the trust registry (provenance, trust, verification, probe).
 - `~/.mnemo/quarantine/` — held lessons + stashed copies (release-able).
 - `~/.mnemo/eval-history.jsonl` — probe pass-rate over time.
-- `~/.mnemo/corrections.jsonl` · `curiosity/` · `logs/` (review/verify/eval/curiosity).
+- `~/.mnemo/sessions.db` — FTS5 episodic-recall index over past transcripts.
+- `~/.mnemo/pruned/` — skills the curator archived (recoverable; never deleted).
+- `~/.mnemo/corrections.jsonl` · `curiosity/` · `logs/` (review/verify/eval/curiosity/curator).
 - Forged skills → `~/.claude/skills/<name>/` with `forged-by: mnemo`.
 
 ## Trust scoring
@@ -60,9 +77,13 @@ session used the web). The verifier may raise it (clear correction) or quarantin
 ## Safety invariants
 
 - mnemo only writes its own store + skills it forged; never edits human skills,
-  CLAUDE.md, or settings.
+  CLAUDE.md, or settings. The curator only ever touches `forged-by: mnemo` skills
+  and archives (never deletes).
 - Verification is **independent** (separate `claude -p`, `MNEMO_REVIEWING`-guarded
   so it can't recurse). The writer never signs off its own work.
+- The memory store is hardened: a deterministic injection/exfil/invisible-unicode
+  scan blocks promptware at write- and inject-time, an fcntl lock makes concurrent
+  sessions safe, and a drift guard backs up rather than clobbers out-of-band edits.
 - Memory is bounded; quarantine + release keep self-modification reversible.
 - Pause: `touch ~/.mnemo/OFF` (or `mnemo off`). Tune: `MNEMO_TRUST_THRESHOLD`,
   `MNEMO_NUDGE_INTERVAL`, `MNEMO_REVIEW_MODEL`, `MNEMO_VERIFY_MODEL`, `MNEMO_EVAL_MODEL`.

@@ -67,7 +67,7 @@ After writing a memory entry OR forging a skill, register it so it carries prove
   • add --web if THIS session involved web research (this session's web-influence = $WEB).
 Low-trust lessons (web-sourced / unverified) are automatically HELD from injection until trust is raised — that is the intended safety behaviour, not a bug. Register honestly.
 
-When finished, print a single line summarising what you changed (e.g. 'updated USER.md (registered, trust 85); forged skill deploy-staq (registered)'), or exactly 'Nothing to save.'"
+When finished, print a single line summarising what you changed (e.g. 'updated USER.md (registered, trust 85); forged skill deploy-app (registered)'), or exactly 'Nothing to save.'"
 
 echo "[$(date -u +%FT%TZ)] review START session=$SESSION model=$MODEL transcript=$TRANSCRIPT" >>"$LOG"
 timeout "${MNEMO_REVIEW_TIMEOUT:-300}" env \

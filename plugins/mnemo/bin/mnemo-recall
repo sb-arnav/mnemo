@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""mnemo-recall — episodic recall over your past Claude Code sessions.
+
+Hermes' single most-cited feature is the one where it "remembers a detail from a
+setup you discussed three weeks ago". It does it with a SQLite FTS5 index over
+every past session transcript. Claude Code already writes those transcripts
+(~/.claude/projects/<slug>/<session>.jsonl, one message per line) — they were
+just never searchable. mnemo-recall indexes them and gives the agent a fast,
+zero-LLM keyword recall tool with three calling shapes (like Hermes'
+session_search): discovery / scroll / browse.
+
+  mnemo-recall index [--full]                 (re)build the index (incremental by default)
+  mnemo-recall search "<query>" [--limit N] [--project <slug>]
+  mnemo-recall scroll <session> <anchor> [--window N]   anchor = message uuid or line no
+  mnemo-recall browse [--limit N]             recent sessions, newest first
+  mnemo-recall stats
+
+The index lives at $MNEMO_HOME/sessions.db. Indexing is incremental: one
+transcript file == one session, so a file whose mtime/size changed is wiped and
+re-indexed (robust to compaction/rewrites); unchanged files are skipped.
+Only human-readable conversation is indexed — user messages and assistant text
+(no thinking, no tool spew) — to keep recall sharp.
+"""
+import sys, os, re, json, sqlite3, argparse
+from pathlib import Path
+
+HOME = Path(os.environ.get("MNEMO_HOME", str(Path.home() / ".mnemo")))
+PROJECTS = Path(os.environ.get("MNEMO_PROJECTS_DIR", str(Path.home() / ".claude" / "projects")))
+DB = HOME / "sessions.db"
+MAX_TEXT = 4000  # cap per-message indexed text so one giant paste can't dominate
+
+
+def _db():
+    HOME.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB))
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS msgs USING fts5("
+        "uuid UNINDEXED, session UNINDEXED, project UNINDEXED, "
+        "ts UNINDEXED, role UNINDEXED, lineno UNINDEXED, text, "
+        "tokenize='unicode61 remove_diacritics 2')"
+    )
+    con.execute("CREATE TABLE IF NOT EXISTS files("
+                "path TEXT PRIMARY KEY, mtime REAL, size INTEGER, session TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS titles("
+                "session TEXT PRIMARY KEY, project TEXT, ts TEXT, title TEXT)")
+    return con
+
+
+def _text_of(msg):
+    """Human-readable text from a message.content (string or block list)."""
+    c = msg.get("content")
+    if isinstance(c, str):
+        return c.strip()
+    if isinstance(c, list):
+        out = []
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "text" and b.get("text"):
+                out.append(b["text"])
+        return "\n".join(out).strip()
+    return ""
+
+
+def _iter_messages(path):
+    """Yield (uuid, ts, role, lineno, text, cwd, title) for indexable lines."""
+    title = None
+    cwd = None
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for i, line in enumerate(fh):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            t = d.get("type")
+            if cwd is None and d.get("cwd"):
+                cwd = d["cwd"]
+            if t == "ai-title":
+                title = d.get("title") or d.get("text") or title
+                continue
+            if t not in ("user", "assistant"):
+                continue
+            msg = d.get("message") or {}
+            text = _text_of(msg)
+            if not text or text.startswith("<") and text.endswith(">"):
+                continue
+            # skip tool-result echoes that slip in as user strings
+            if t == "user" and text.startswith("[Request interrupted"):
+                continue
+            yield (
+                d.get("uuid") or f"{path.stem}:{i}",
+                (d.get("timestamp") or "")[:19],
+                msg.get("role") or t,
+                i,
+                text[:MAX_TEXT],
+                cwd,
+                title,
+            )
+
+
+def cmd_index(a):
+    con = _db()
+    if a.full:
+        con.execute("DELETE FROM msgs"); con.execute("DELETE FROM files")
+        con.execute("DELETE FROM titles")
+    known = dict((r[0], (r[1], r[2])) for r in con.execute("SELECT path, mtime, size FROM files"))
+    files = sorted(PROJECTS.glob("*/*.jsonl"))
+    changed = indexed_msgs = 0
+    for f in files:
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        prev = known.get(str(f))
+        if prev and abs(prev[0] - st.st_mtime) < 1e-6 and prev[1] == st.st_size:
+            continue
+        session = f.stem
+        project = f.parent.name
+        con.execute("DELETE FROM msgs WHERE session=?", (session,))
+        rows = []
+        first_ts = ""; title = None; cwd = None
+        for uuid, ts, role, lineno, text, c, ttl in _iter_messages(f):
+            if not first_ts and ts:
+                first_ts = ts
+            if ttl:
+                title = ttl
+            if c:
+                cwd = c
+            rows.append((uuid, session, project, ts, role, lineno, text))
+        if rows:
+            con.executemany(
+                "INSERT INTO msgs(uuid,session,project,ts,role,lineno,text) "
+                "VALUES(?,?,?,?,?,?,?)", rows)
+            # title: ai-title if present, else first user message
+            if not title:
+                title = next((r[6] for r in rows if r[4] == "user"), "")
+                title = re.sub(r"\s+", " ", title)[:80]
+            con.execute("INSERT OR REPLACE INTO titles(session,project,ts,title) "
+                        "VALUES(?,?,?,?)", (session, cwd or project, first_ts, title))
+            indexed_msgs += len(rows)
+        con.execute("INSERT OR REPLACE INTO files(path,mtime,size,session) VALUES(?,?,?,?)",
+                    (str(f), st.st_mtime, st.st_size, session))
+        changed += 1
+    con.commit()
+    print(f"indexed: {changed} session(s) updated, {indexed_msgs} messages "
+          f"[total {con.execute('SELECT count(*) FROM msgs').fetchone()[0]} msgs / "
+          f"{con.execute('SELECT count(*) FROM titles').fetchone()[0]} sessions]")
+
+
+def _fts_query(q):
+    """Make a forgiving FTS5 query: OR the bare terms, drop punctuation."""
+    terms = re.findall(r"[\w]+", q)
+    if not terms:
+        return None
+    return " OR ".join(f'"{t}"' for t in terms)
+
+
+def cmd_search(a):
+    if not DB.exists():
+        cmd_index(argparse.Namespace(full=False))
+    con = _db()
+    q = _fts_query(a.query)
+    if not q:
+        sys.exit("empty query")
+    where = "msgs MATCH ?"
+    params = [q]
+    if a.project:
+        where += " AND project = ?"
+        params.append(a.project)
+    sql = (f"SELECT session, project, ts, role, lineno, uuid, "
+           f"snippet(msgs, 6, '⟦', '⟧', '…', 14) AS snip, bm25(msgs) AS rank "
+           f"FROM msgs WHERE {where} ORDER BY rank LIMIT 400")
+    try:
+        rows = con.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as e:
+        sys.exit(f"search error: {e}")
+    # group by session, keep best 2 snippets each, order sessions by best rank
+    sessions = {}
+    for session, project, ts, role, lineno, uuid, snip, rank in rows:
+        s = sessions.setdefault(session, {"rank": rank, "ts": ts, "project": project, "hits": []})
+        s["rank"] = min(s["rank"], rank)
+        if ts > s["ts"]:
+            s["ts"] = ts
+        if len(s["hits"]) < 2:
+            s["hits"].append((role, lineno, uuid, " ".join(snip.split())))
+    top = sorted(sessions.items(), key=lambda kv: kv[1]["rank"])[:a.limit]
+    tot = con.execute("SELECT count(*) FROM msgs").fetchone()[0]
+    nses = con.execute("SELECT count(*) FROM titles").fetchone()[0]
+    if not top:
+        print(f'no past session matched "{a.query}"  (index: {tot} msgs / {nses} sessions)')
+        return
+    print(f'{len(top)} session(s) match "{a.query}"  (index: {tot} msgs / {nses} sessions)\n')
+    for session, info in top:
+        tr = con.execute("SELECT title, ts FROM titles WHERE session=?", (session,)).fetchone()
+        title = (tr[0] if tr and tr[0] else "(untitled)")
+        date = (info["ts"] or (tr[1] if tr else ""))[:10]
+        print(f"▸ [{date}] {title}")
+        print(f"   project {info['project']}   session {session}")
+        for role, lineno, uuid, snip in info["hits"]:
+            print(f"   {role}: {snip[:200]}")
+        anchor = info["hits"][0][2]
+        print(f"   ↳ widen: mnemo recall scroll {session} {anchor}\n")
+
+
+def cmd_scroll(a):
+    con = _db()
+    rows = con.execute("SELECT lineno, role, uuid, text FROM msgs WHERE session=? ORDER BY lineno",
+                       (a.session,)).fetchall()
+    if not rows:
+        sys.exit(f"no indexed messages for session {a.session} (try: mnemo recall index)")
+    # resolve anchor → index in rows
+    idx = 0
+    if a.anchor.isdigit():
+        target = int(a.anchor)
+        idx = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
+    else:
+        idx = next((i for i, r in enumerate(rows) if r[2] == a.anchor), len(rows) // 2)
+    lo = max(0, idx - a.window)
+    hi = min(len(rows), idx + a.window + 1)
+    tr = con.execute("SELECT title FROM titles WHERE session=?", (a.session,)).fetchone()
+    print(f"session {a.session}  {('— ' + tr[0]) if tr and tr[0] else ''}")
+    print(f"messages {lo}–{hi-1} of {len(rows)}:\n")
+    for i in range(lo, hi):
+        lineno, role, uuid, text = rows[i]
+        mark = "►" if i == idx else " "
+        body = re.sub(r"\s+", " ", text).strip()
+        print(f"{mark} [{role}] {body[:400]}")
+
+
+def cmd_browse(a):
+    con = _db()
+    rows = con.execute("SELECT session, project, ts, title FROM titles "
+                       "ORDER BY ts DESC LIMIT ?", (a.limit,)).fetchall()
+    if not rows:
+        print("(index empty — run: mnemo recall index)")
+        return
+    print(f"{len(rows)} recent session(s):\n")
+    for session, project, ts, title in rows:
+        print(f"▸ [{(ts or '')[:10]}] {title or '(untitled)'}")
+        print(f"   {project}   session {session}")
+
+
+def cmd_stats(a):
+    if not DB.exists():
+        print("(no index yet — run: mnemo recall index)")
+        return
+    con = _db()
+    m = con.execute("SELECT count(*) FROM msgs").fetchone()[0]
+    s = con.execute("SELECT count(*) FROM titles").fetchone()[0]
+    f = con.execute("SELECT count(*) FROM files").fetchone()[0]
+    size = DB.stat().st_size / 1024
+    span = con.execute("SELECT min(ts), max(ts) FROM titles WHERE ts!=''").fetchone()
+    print(f"index: {m} messages · {s} sessions · {f} files · {size:.0f} KB")
+    if span and span[0]:
+        print(f"span:  {span[0][:10]} → {span[1][:10]}")
+    print(f"db:    {DB}")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="mnemo-recall")
+    sub = p.add_subparsers(dest="cmd")
+    ix = sub.add_parser("index"); ix.set_defaults(fn=cmd_index); ix.add_argument("--full", action="store_true")
+    se = sub.add_parser("search"); se.set_defaults(fn=cmd_search)
+    se.add_argument("query"); se.add_argument("--limit", type=int, default=5); se.add_argument("--project", default="")
+    sc = sub.add_parser("scroll"); sc.set_defaults(fn=cmd_scroll)
+    sc.add_argument("session"); sc.add_argument("anchor"); sc.add_argument("--window", type=int, default=5)
+    br = sub.add_parser("browse"); br.set_defaults(fn=cmd_browse); br.add_argument("--limit", type=int, default=15)
+    st = sub.add_parser("stats"); st.set_defaults(fn=cmd_stats)
+    a = p.parse_args()
+    if not getattr(a, "cmd", None):
+        p.print_help(); sys.exit(2)
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()

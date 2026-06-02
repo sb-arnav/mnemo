@@ -30,5 +30,10 @@ if [ "$turns" -ge "$MIN_TURNS" ] && [ "$turns" -gt "$last" ]; then
   nohup bash "$PLUGIN_ROOT/scripts/review.sh" "$TRANSCRIPT" "$SESSION" \
     >/dev/null 2>&1 &
 fi
+
+# Keep the episodic-recall index fresh. Incremental (only changed sessions
+# re-index), detached + silent so it never blocks session teardown.
+nohup python3 "$PLUGIN_ROOT/bin/mnemo-recall" index >/dev/null 2>&1 &
+
 rm -f "$STATE.turns" "$STATE.reviewed"
 exit 0

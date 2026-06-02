@@ -3,11 +3,15 @@
 
   mnemo status                       dashboard: memory, trust registry, probe replay, compounding
   mnemo mem    ...                   memory store (add/replace/remove/show)
+  mnemo recall ...                   episodic search over past sessions (index/search/scroll/browse)
   mnemo trust                        list every lesson with its provenance + trust score
   mnemo quarantine [list]            lessons the verifier held back, with reasons
   mnemo quarantine release <id>      vouch for a held lesson → restore it to the live store
   mnemo quarantine discard <id>      permanently drop a held lesson
   mnemo lesson ...                   low-level registry (register/verify/probes/...)
+  mnemo skill  ...                   forged-skill lifecycle (list/candidates/stale/pin/unpin)
+  mnemo curator [run|dry-run]        consolidate forged skills into class-level umbrellas
+  mnemo gc                           alias for `mnemo curator run`
   mnemo eval                         replay probes now (did learning still hold?)
   mnemo curiosity                    run the curiosity loop now
   mnemo apply  <proposal>            apply a curiosity proposal's change block (dry-run by default)
@@ -61,6 +65,13 @@ def main():
         _run([sys.executable, str(BIN / "mnemo-status")])
     elif c == "mem":
         _run([sys.executable, str(BIN / "mnemo-mem")] + a[1:])
+    elif c == "recall":
+        _run([sys.executable, str(BIN / "mnemo-recall")] + a[1:])
+    elif c == "skill":
+        _run([sys.executable, str(BIN / "mnemo-skill")] + a[1:])
+    elif c in ("curator", "gc"):
+        mode = a[1] if (len(a) > 1 and c == "curator") else "run"
+        _run(["bash", str(SCRIPTS / "curator.sh"), mode])
     elif c == "lesson":
         _run([sys.executable, str(BIN / "mnemo-lesson")] + a[1:])
     elif c == "trust":
@@ -90,7 +101,8 @@ def main():
             pass
         print("mnemo active")
     else:
-        sys.exit(f"unknown command '{c}'. try: status mem skill apply curiosity gc on off")
+        sys.exit(f"unknown command '{c}'. try: status mem recall trust skill curator "
+                 f"eval curiosity quarantine apply gc on off")
 
 
 if __name__ == "__main__":
