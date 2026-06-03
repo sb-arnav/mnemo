@@ -20,6 +20,7 @@ ENVLINE="CLAUDE_PLUGIN_ROOT=$PLUGIN_ROOT"
 read -r -d '' BLOCK <<EOF || true
 $MARK_BEGIN
 # mnemo scheduled loops — edit times freely; keep the markers.
+0 */2 * * *   $ENVLINE bash $PLUGIN_ROOT/scripts/sweep.sh >/dev/null 2>&1
 0 */6 * * *   $ENVLINE python3 $PLUGIN_ROOT/bin/mnemo-recall index >/dev/null 2>&1
 30 3 * * *    $ENVLINE bash $PLUGIN_ROOT/scripts/eval.sh >/dev/null 2>&1
 0 4 * * *     $ENVLINE bash $PLUGIN_ROOT/scripts/curiosity.sh >/dev/null 2>&1
@@ -44,5 +45,5 @@ if [ "${1:-}" = "--remove" ]; then
 fi
 
 { printf '%s\n' "$cleaned" | sed '/^$/d'; printf '%s\n' "$BLOCK"; } | crontab -
-echo "mnemo cron installed (recall index 6h · eval 03:30 · curiosity 04:00 · curator Sun 04:30)."
+echo "mnemo cron installed (sweep 2h · recall index 6h · eval 03:30 · curiosity 04:00 · curator Sun 04:30)."
 echo "Inspect: crontab -l   ·   remove: $0 --remove"

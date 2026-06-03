@@ -48,6 +48,8 @@ mnemo eval                        # replay probes now (did learning still hold?)
 mnemo mem show user|memory        # inspect the bounded stores
 mnemo recall search "<query>"     # search past sessions · scroll/browse/index
 mnemo skill list                  # forged skills with usage/age · pin/unpin/stale
+mnemo sweep                       # review idle, unreviewed sessions (reliable trigger)
+mnemo backfill [N]                # one-time: learn from the N most-recent past sessions
 mnemo curator [dry-run]           # consolidate the forged-skill library
 mnemo curiosity                   # run the curiosity loop now
 mnemo on | off                    # resume / pause the whole loop

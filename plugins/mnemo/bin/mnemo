@@ -10,6 +10,8 @@
   mnemo quarantine discard <id>      permanently drop a held lesson
   mnemo lesson ...                   low-level registry (register/verify/probes/...)
   mnemo skill  ...                   forged-skill lifecycle (list/candidates/stale/pin/unpin)
+  mnemo sweep                        review idle, unreviewed sessions (lifecycle-independent trigger)
+  mnemo backfill [N]                 one-time: review the N most-recent unreviewed sessions
   mnemo curator [run|dry-run]        consolidate forged skills into class-level umbrellas
   mnemo gc                           alias for `mnemo curator run`
   mnemo eval                         replay probes now (did learning still hold?)
@@ -72,6 +74,10 @@ def main():
     elif c in ("curator", "gc"):
         mode = a[1] if (len(a) > 1 and c == "curator") else "run"
         _run(["bash", str(SCRIPTS / "curator.sh"), mode])
+    elif c == "sweep":
+        _run(["bash", str(SCRIPTS / "sweep.sh")] + a[1:])
+    elif c == "backfill":
+        _run(["bash", str(SCRIPTS / "sweep.sh"), "--backfill"] + a[1:])
     elif c == "lesson":
         _run([sys.executable, str(BIN / "mnemo-lesson")] + a[1:])
     elif c == "trust":
