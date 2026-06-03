@@ -1,6 +1,10 @@
 # mnemo
 
-**The Hermes self-improving loop, native to Claude Code.**
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-7c3aed) ![memory · skills · recall](https://img.shields.io/badge/memory%20·%20skills%20·%20recall-✓-success)
+
+**Persistent cross-session memory, self-forged skills, and episodic recall for [Claude Code](https://www.anthropic.com/claude-code) — a [Hermes Agent](https://github.com/NousResearch/hermes-agent)-style self-improving loop, with a trust layer, on your own Claude subscription.**
+
+> A Claude Code memory plugin that remembers you across sessions, writes its own skills, and searches your past conversations — but unlike every other self-improving agent, it *verifies what it learns before trusting it*. A native, subscription-priced answer to "I keep leaving Claude Code for Hermes because it compounds."
 
 People keep leaving Claude Code for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — not because the model is better (it isn't), but because Hermes *compounds*: it curates its own memory, builds a model of you, and writes its own skills, all automatically. "Day thirty doesn't feel like day one." Claude Code already has every storage primitive Hermes has — skills, memory files, subagents — it was just missing the **involuntary loop** that feeds them. And Anthropic [cut subscription tokens out of third-party agents like Hermes](https://github.com/NousResearch/hermes-agent), so getting that experience there now costs API-rate money.
 
