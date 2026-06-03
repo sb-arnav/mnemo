@@ -85,6 +85,33 @@ Self-improving agents drift. dorveille is built so it can't drift far:
 - Memory is **bounded**; curiosity is **advisory** (proposes, doesn't apply).
 - Everything is plain markdown in git-trackable dirs — **fully auditable and revertable**.
 
+## Permissions & side effects
+
+dorveille is a self-improving loop, so it runs background work automatically once
+installed. In the interest of full disclosure:
+
+- **It auto-runs `claude -p` worker agents** after sessions (the memory/skill
+  review, and on a schedule the verifier, probe-replay, curiosity, and curator).
+  Each is a billed model call on your own Claude subscription.
+- **Those workers can run `Bash` and write files.** The review and curator
+  workers run with `--permission-mode acceptEdits` and `Read, Bash, Write, Edit`,
+  scoped via `--add-dir` to `~/.dorveille` and `~/.claude/skills`. By prompt they
+  only write their own store and skills they forged (`forged-by: dorveille`) —
+  this is a *prompt-enforced* boundary, not an OS sandbox. The verifier and
+  probe-replay workers run read-only (`Read, Bash, Grep, Glob`, no write).
+- **The curiosity loop makes network requests** (`WebSearch` / `WebFetch`) to
+  research improvement ideas. It only ever writes *proposals* to
+  `~/.dorveille/curiosity/`; it never applies a change. No other component makes
+  network calls beyond the Anthropic API used by the workers.
+- **What it writes to disk:** `~/.dorveille/*` (memory, trust registry, recall
+  index, logs) and `~/.claude/skills/<name>/` (skills it forged itself). It never
+  edits your hand-authored skills, `CLAUDE.md`, or settings.
+- **Disable everything** with `dorveille off` (or `touch ~/.dorveille/OFF`);
+  curiosity only with `touch ~/.dorveille/CURIOSITY_OFF`. The optional cron
+  (`scripts/install-cron.sh`) is **not** installed automatically — you opt in.
+
+See [SECURITY.md](SECURITY.md) for the trust model.
+
 ## Install
 
 ```bash
