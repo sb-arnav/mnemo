@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""dorveille-skill — lifecycle + usage telemetry for dorveille-forged skills.
+
+Hermes ships skill usage telemetry (use-count / last-used) and a curator that
+consolidates and ages out skills. dorveille forges skills but never tracked whether
+they earn their keep, so the library could only grow. This is the deterministic
+half of the curator: it reads + maintains the frontmatter signals the LLM
+consolidation pass (curator.sh) reasons over.
+
+STRICT SAFETY: every mutating command operates ONLY on skills whose frontmatter
+contains `forged-by: dorveille`. Human-authored and plugin skills are never touched.
+
+  dorveille-skill list                 forged skills with forged/uses/last-used/age/pinned
+  dorveille-skill candidates           machine-readable list the curator consumes
+  dorveille-skill stale [--days N]      forged skills idle ≥ N days (default 30)
+  dorveille-skill touch <name>          uses += 1, last-used = today  (PostToolUse hook)
+  dorveille-skill pin <name> | unpin <name>   protect from archive/consolidation
+"""
+import sys, os, re, argparse
+from datetime import date, datetime
+from pathlib import Path
+
+SKILLS = Path(os.environ.get("DORVEILLE_SKILLS_DIR", str(Path.home() / ".claude" / "skills")))
+STALE_DAYS = int(os.environ.get("DORVEILLE_SKILL_STALE_DAYS", "30"))
+
+
+def _today():
+    return date.today().isoformat()
+
+
+def _split(path):
+    """Return (frontmatter_dict, raw_fm_lines, body) for a SKILL.md, or None."""
+    text = path.read_text(encoding="utf-8")
+    m = re.match(r"^---\n(.*?)\n---\n?(.*)$", text, re.S)
+    if not m:
+        return None
+    fm_raw, body = m.group(1), m.group(2)
+    fm = {}
+    for line in fm_raw.splitlines():
+        mm = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
+        if mm:
+            fm[mm.group(1).strip()] = mm.group(2).strip()
+    return fm, fm_raw, body
+
+
+def _forged():
+    """Yield (name, path, fm, fm_raw, body) for every forged-by:dorveille skill."""
+    if not SKILLS.exists():
+        return
+    for d in sorted(SKILLS.iterdir()):
+        sk = d / "SKILL.md"
+        if not sk.is_file():
+            continue
+        parsed = _split(sk)
+        if not parsed:
+            continue
+        fm, fm_raw, body = parsed
+        if fm.get("forged-by", "").lower() != "dorveille":
+            continue
+        yield d.name, sk, fm, fm_raw, body
+
+
+def _age_days(fm):
+    f = fm.get("forged", "")
+    try:
+        return (date.today() - datetime.strptime(f[:10], "%Y-%m-%d").date()).days
+    except Exception:
+        return None
+
+
+def _idle_days(fm):
+    lu = fm.get("last-used", "never")
+    if not lu or lu.lower() == "never":
+        return _age_days(fm)
+    try:
+        return (date.today() - datetime.strptime(lu[:10], "%Y-%m-%d").date()).days
+    except Exception:
+        return None
+
+
+def _set_fm(path, fm_raw, body, updates):
+    """Rewrite frontmatter with `updates` (dict). Adds keys that don't exist."""
+    lines = fm_raw.splitlines()
+    seen = set()
+    for i, line in enumerate(lines):
+        mm = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
+        if mm and mm.group(1) in updates:
+            lines[i] = f"{mm.group(1)}: {updates[mm.group(1)]}"
+            seen.add(mm.group(1))
+    for k, v in updates.items():
+        if k not in seen:
+            lines.append(f"{k}: {v}")
+    path.write_text("---\n" + "\n".join(lines) + "\n---\n" + body, encoding="utf-8")
+
+
+def cmd_list(a):
+    rows = list(_forged())
+    if not rows:
+        print("(no dorveille-forged skills yet)")
+        return
+    print(f"{'skill':<34} {'uses':>4} {'age':>5} {'idle':>5}  flags")
+    for name, sk, fm, _, _b in sorted(rows, key=lambda r: (r[2].get("pinned","")!="true", -int(r[2].get("uses","0") or 0))):
+        uses = fm.get("uses", "0")
+        age = _age_days(fm); idle = _idle_days(fm)
+        flags = []
+        if fm.get("pinned", "").lower() == "true":
+            flags.append("📌pinned")
+        if (idle is not None and idle >= STALE_DAYS):
+            flags.append(f"stale({idle}d)")
+        if fm.get("contradicted", "").lower() == "true":
+            flags.append("⚠contradicted")
+        print(f"{name:<34} {uses:>4} {str(age)+'d' if age is not None else '?':>5} "
+              f"{str(idle)+'d' if idle is not None else '?':>5}  {' '.join(flags)}")
+
+
+def cmd_candidates(a):
+    """Machine-readable list for the curator: name, desc, signals (excl pinned)."""
+    any_ = False
+    for name, sk, fm, _, _b in _forged():
+        if fm.get("pinned", "").lower() == "true":
+            continue
+        any_ = True
+        desc = fm.get("description", "").replace("\n", " ")[:160]
+        print(f"{name}\tuses={fm.get('uses','0')}\tidle={_idle_days(fm)}\t"
+              f"age={_age_days(fm)}\tdesc={desc}")
+    if not any_:
+        print("(none)")
+
+
+def cmd_stale(a):
+    days = a.days
+    hits = [(n, _idle_days(fm)) for n, sk, fm, _, _b in _forged()
+            if fm.get("pinned", "").lower() != "true"
+            and _idle_days(fm) is not None and _idle_days(fm) >= days]
+    if not hits:
+        print(f"(no forged skill idle ≥ {days}d)")
+        return
+    for n, idle in sorted(hits, key=lambda x: -x[1]):
+        print(f"{n}\tidle={idle}d")
+
+
+def _find(name):
+    for n, sk, fm, fm_raw, body in _forged():
+        if n == name:
+            return sk, fm, fm_raw, body
+    sys.exit(f"error: no dorveille-forged skill '{name}' (won't touch non-forged skills)")
+
+
+def cmd_touch(a):
+    sk, fm, fm_raw, body = _find(a.name)
+    uses = int(fm.get("uses", "0") or 0) + 1
+    _set_fm(sk, fm_raw, body, {"uses": uses, "last-used": _today()})
+    print(f"{a.name}: uses={uses} last-used={_today()}")
+
+
+def cmd_pin(a):
+    sk, fm, fm_raw, body = _find(a.name)
+    _set_fm(sk, fm_raw, body, {"pinned": "true"})
+    print(f"{a.name}: 📌 pinned (protected from archive/consolidation)")
+
+
+def cmd_unpin(a):
+    sk, fm, fm_raw, body = _find(a.name)
+    _set_fm(sk, fm_raw, body, {"pinned": "false"})
+    print(f"{a.name}: unpinned")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="dorveille-skill")
+    sub = p.add_subparsers(dest="cmd")
+    sub.add_parser("list").set_defaults(fn=cmd_list)
+    sub.add_parser("candidates").set_defaults(fn=cmd_candidates)
+    st = sub.add_parser("stale"); st.set_defaults(fn=cmd_stale); st.add_argument("--days", type=int, default=STALE_DAYS)
+    tc = sub.add_parser("touch"); tc.set_defaults(fn=cmd_touch); tc.add_argument("name")
+    pn = sub.add_parser("pin"); pn.set_defaults(fn=cmd_pin); pn.add_argument("name")
+    up = sub.add_parser("unpin"); up.set_defaults(fn=cmd_unpin); up.add_argument("name")
+    a = p.parse_args()
+    if not getattr(a, "cmd", None):
+        p.print_help(); sys.exit(2)
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()

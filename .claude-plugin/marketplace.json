@@ -1,14 +1,14 @@
 {
-  "name": "mnemo",
-  "owner": { "name": "mnemo" },
+  "name": "dorveille",
+  "owner": { "name": "dorveille" },
   "metadata": {
-    "description": "mnemo — the trust layer for AI agent self-improvement, native to Claude Code",
+    "description": "dorveille — the trust layer for AI agent self-improvement, native to Claude Code",
     "version": "0.4.2"
   },
   "plugins": [
     {
-      "name": "mnemo",
-      "source": "./plugins/mnemo",
+      "name": "dorveille",
+      "source": "./plugins/dorveille",
       "description": "Self-improving memory + skills for Claude Code where you can trust what it learned: cross-session memory, self-forged skills, and FTS5 episodic recall over past sessions — but every lesson carries provenance + a trust score, is challenged by an independent verifier before it sticks (poisoned ones quarantined), re-checked by a falsifiable probe, and the skill library is auto-consolidated by a curator. Bounded, auditable, on your own subscription."
     }
   ]

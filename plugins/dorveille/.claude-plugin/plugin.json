@@ -1,0 +1,8 @@
+{
+  "name": "dorveille",
+  "description": "The trust layer for AI agent self-improvement, native to Claude Code: auto-curated cross-session memory, self-forged skills, and FTS5 episodic recall over every past session — but every lesson carries provenance + a trust score, is challenged by an independent verifier before it sticks (poisoned ones quarantined), re-checked by a falsifiable probe, and the skill library is auto-consolidated by a curator. Bounded, auditable, on your own subscription.",
+  "version": "0.4.2",
+  "author": { "name": "dorveille contributors" },
+  "license": "MIT",
+  "keywords": ["memory", "skills", "self-improving", "verification", "trust", "agent-safety", "session-search", "recall", "curator", "hermes"]
+}

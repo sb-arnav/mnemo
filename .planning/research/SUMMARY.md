@@ -1,4 +1,4 @@
-# Research Summary — grounding for mnemo (the trust layer)
+# Research Summary — grounding for dorveille (the trust layer)
 
 This replaces generic domain research: it's a code-grounded study of the actual
 competitor, NousResearch/hermes-agent (cloned at /tmp/hermes-agent, ~976k LOC),
@@ -22,7 +22,7 @@ where the real opportunity is.
 - **Breadth**: 20+ platform gateway, cron, Kanban multi-agent swarm, 6 terminal
   backends, ACP/MCP bridges, provider fallback + cost routing.
 
-**Implication:** mnemo v0.2's "effectiveness tracking + GC" duplicated Hermes'
+**Implication:** dorveille v0.2's "effectiveness tracking + GC" duplicated Hermes'
 curator and should be deprecated. Memory/skill *mechanics* are a solved, crowded
 space. Do not compete there.
 
@@ -40,9 +40,9 @@ space. Do not compete there.
    user-model are local; no team/repo sharing. Hermes lives in messaging+cron,
    not the repo.
 
-## Why mnemo wins here
+## Why dorveille wins here
 
-mnemo is already Claude-Code-native (in the repo, on the subscription, git-backed
+dorveille is already Claude-Code-native (in the repo, on the subscription, git-backed
 = auditable/revertable). That's the structural edge Hermes lacks (its identity is
 "lives in Telegram, not your laptop"). Building **verification + eval + provenance**
 on top of an already-native, already-git-backed substrate is something Hermes
@@ -54,7 +54,7 @@ is the actual blocker to every dev adopting a self-modifying agent.
 - Don't let the verifier be the same agent that wrote the lesson (self-judging
   can't catch its own drift) — use an independent `claude -p` pass.
 - `--bare` skips credential discovery → "Not logged in". The worker must run
-  non-bare; recursion is prevented by the `MNEMO_REVIEWING` env sentinel.
+  non-bare; recursion is prevented by the `DORVEILLE_REVIEWING` env sentinel.
 - Keep memory bounded (the char cap is *why* it stays sharp).
 - Don't silently drop failed lessons — quarantine with a reason (auditable).
 - Avoid capturing environment-dependent failures / negative tool claims as

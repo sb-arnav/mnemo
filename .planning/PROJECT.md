@@ -1,11 +1,11 @@
-# mnemo — the trust layer for AI agent self-improvement
+# dorveille — the trust layer for AI agent self-improvement
 
 ## What This Is
 
-mnemo is a Claude Code plugin that makes the agent **compound** — it curates
+dorveille is a Claude Code plugin that makes the agent **compound** — it curates
 cross-session memory and forges its own skills automatically — but unlike every
 existing self-improving agent (Hermes, OpenClaw, and the prior-art CC plugins),
-mnemo **verifies and evaluates what it learns before trusting it.**
+dorveille **verifies and evaluates what it learns before trusting it.**
 
 It runs natively inside Claude Code, in your repo, on your own subscription
 (driving the real `claude` binary via hooks — no API-key bridge, nothing that
@@ -39,7 +39,7 @@ independent code readings:
 3. **Single-machine / not codebase-native.** Memory + user-model are local,
    single-user; Hermes lives in Telegram/cron, not your repo.
 
-mnemo is *already* Claude-Code-native — the one thing Hermes structurally is
+dorveille is *already* Claude-Code-native — the one thing Hermes structurally is
 not. So we build the thing Hermes can't: the **trust + eval layer**.
 
 ## Requirements
@@ -47,8 +47,8 @@ not. So we build the thing Hermes can't: the **trust + eval layer**.
 ### Validated
 
 (None yet — ship to validate. The v0.2 substrate exists and works: bounded
-memory store `bin/mnemo-mem`, the `claude -p` review worker, the four hooks
-(SessionStart/Stop/SessionEnd/UserPromptSubmit), the `MNEMO_REVIEWING`
+memory store `bin/dorveille-mem`, the `claude -p` review worker, the four hooks
+(SessionStart/Stop/SessionEnd/UserPromptSubmit), the `DORVEILLE_REVIEWING`
 recursion sentinel — these are reused, not re-proven.)
 
 ### Active
@@ -59,8 +59,8 @@ recursion sentinel — these are reused, not re-proven.)
 - [ ] PROV: low-trust lessons are quarantined/flagged, not auto-loaded
 - [ ] EVAL: each forged lesson gets a tiny falsifiable probe captured at creation
 - [ ] EVAL: a periodic replay confirms learned knowledge still holds; failures flag the lesson
-- [ ] EVAL: a reproducible "did learning help?" signal in `mnemo status`
-- [ ] NATIVE: quarantine, provenance, trust + probes are all git-native, auditable, revertable, visible via the `mnemo` CLI
+- [ ] EVAL: a reproducible "did learning help?" signal in `dorveille status`
+- [ ] NATIVE: quarantine, provenance, trust + probes are all git-native, auditable, revertable, visible via the `dorveille` CLI
 
 ### Out of Scope
 
@@ -77,7 +77,7 @@ recursion sentinel — these are reused, not re-proven.)
 | Build the trust+eval layer, not more memory/skills mechanics | Hermes already solved the mechanics; verification/eval is the real unsolved gap | — Pending |
 | Deprecate v0.2 effectiveness-tracking + GC | It reinvented Hermes' curator (skill_usage.py + curator.py), which is deeper | — Pending |
 | Verifier = independent adversarial agent (separate `claude -p` pass) | A self-judging writer can't catch its own drift; independence is the point | — Pending |
-| Reuse the working v0.2 substrate | mnemo-mem store, review worker, hooks, sentinel all tested and working | — Pending |
+| Reuse the working v0.2 substrate | dorveille-mem store, review worker, hooks, sentinel all tested and working | — Pending |
 | Stay Claude-Code-native + git-native | It's our structural edge over Hermes and makes everything auditable/revertable | — Pending |
 
 ## Evolution

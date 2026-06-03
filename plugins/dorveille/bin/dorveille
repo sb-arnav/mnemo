@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""dorveille — front-door CLI for the trust layer.
+
+  dorveille status                       dashboard: memory, trust registry, probe replay, compounding
+  dorveille mem    ...                   memory store (add/replace/remove/show)
+  dorveille recall ...                   episodic search over past sessions (index/search/scroll/browse)
+  dorveille trust                        list every lesson with its provenance + trust score
+  dorveille quarantine [list]            lessons the verifier held back, with reasons
+  dorveille quarantine release <id>      vouch for a held lesson → restore it to the live store
+  dorveille quarantine discard <id>      permanently drop a held lesson
+  dorveille lesson ...                   low-level registry (register/verify/probes/...)
+  dorveille skill  ...                   forged-skill lifecycle (list/candidates/stale/pin/unpin)
+  dorveille sweep                        review idle, unreviewed sessions (lifecycle-independent trigger)
+  dorveille backfill [N]                 one-time: review the N most-recent unreviewed sessions
+  dorveille curator [run|dry-run]        consolidate forged skills into class-level umbrellas
+  dorveille gc                           alias for `dorveille curator run`
+  dorveille eval                         replay probes now (did learning still hold?)
+  dorveille curiosity                    run the curiosity loop now
+  dorveille apply  <proposal>            apply a curiosity proposal's change block (dry-run by default)
+  dorveille on | off                     resume / pause the whole loop
+"""
+import sys, os, re, subprocess
+from pathlib import Path
+
+ROOT = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)))
+BIN, SCRIPTS = ROOT / "bin", ROOT / "scripts"
+HOME = Path(os.environ.get("DORVEILLE_HOME", str(Path.home() / ".dorveille")))
+
+
+def _run(args):
+    raise SystemExit(subprocess.call(args))
+
+
+def _apply(argv):
+    yes = "--yes" in argv
+    names = [a for a in argv if a != "--yes"]
+    if not names:
+        sys.exit("usage: dorveille apply <proposal.md> [--yes]")
+    path = Path(names[0])
+    if not path.exists():
+        alt = HOME / "curiosity" / Path(names[0]).name
+        if alt.exists():
+            path = alt
+    if not path.exists():
+        sys.exit(f"no proposal at {path}")
+    text = path.read_text(encoding="utf-8")
+    m = re.search(r"```apply\s*\n(.*?)```", text, re.S)
+    if not m:
+        sys.exit("no ```apply block — this proposal is advisory-only; apply it by hand")
+    block = m.group(1).strip()
+    print("── apply block ──")
+    print(block)
+    print("─────────────────")
+    if not yes:
+        print("\ndry-run. nothing changed. re-run with --yes to execute.")
+        return
+    print("\nexecuting…")
+    raise SystemExit(subprocess.call(["bash", "-c", block]))
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        a = ["status"]
+    c = a[0]
+    if c == "status":
+        _run([sys.executable, str(BIN / "dorveille-status")])
+    elif c == "mem":
+        _run([sys.executable, str(BIN / "dorveille-mem")] + a[1:])
+    elif c == "recall":
+        _run([sys.executable, str(BIN / "dorveille-recall")] + a[1:])
+    elif c == "skill":
+        _run([sys.executable, str(BIN / "dorveille-skill")] + a[1:])
+    elif c in ("curator", "gc"):
+        mode = a[1] if (len(a) > 1 and c == "curator") else "run"
+        _run(["bash", str(SCRIPTS / "curator.sh"), mode])
+    elif c == "sweep":
+        _run(["bash", str(SCRIPTS / "sweep.sh")] + a[1:])
+    elif c == "backfill":
+        _run(["bash", str(SCRIPTS / "sweep.sh"), "--backfill"] + a[1:])
+    elif c == "lesson":
+        _run([sys.executable, str(BIN / "dorveille-lesson")] + a[1:])
+    elif c == "trust":
+        _run([sys.executable, str(BIN / "dorveille-lesson"), "list"] + a[1:])
+    elif c == "eval":
+        _run(["bash", str(SCRIPTS / "eval.sh")])
+    elif c == "quarantine":
+        sub2 = a[1] if len(a) > 1 else "list"
+        if sub2 == "list":
+            _run([sys.executable, str(BIN / "dorveille-lesson"), "quarantine-list"])
+        elif sub2 in ("release", "discard"):
+            _run([sys.executable, str(BIN / "dorveille-lesson"), sub2] + a[2:])
+        else:
+            sys.exit("usage: dorveille quarantine [list | release <id> | discard <id>]")
+    elif c == "apply":
+        _apply(a[1:])
+    elif c == "curiosity":
+        _run(["bash", str(SCRIPTS / "curiosity.sh")])
+    elif c == "off":
+        HOME.mkdir(parents=True, exist_ok=True)
+        (HOME / "OFF").touch()
+        print("dorveille paused — remove ~/.dorveille/OFF (or `dorveille on`) to resume")
+    elif c == "on":
+        try:
+            (HOME / "OFF").unlink()
+        except FileNotFoundError:
+            pass
+        print("dorveille active")
+    else:
+        sys.exit(f"unknown command '{c}'. try: status mem recall trust skill curator "
+                 f"eval curiosity quarantine apply gc on off")
+
+
+if __name__ == "__main__":
+    main()

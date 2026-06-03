@@ -45,7 +45,7 @@ Recent decisions affecting current work:
 - [Roadmap]: Build the trust+eval layer, not more memory/skills mechanics (Hermes solved the mechanics).
 - [Roadmap]: Deprecate v0.2 effectiveness-tracking + GC — it reinvented Hermes' curator. Stripped in Phase 1.
 - [Roadmap]: Verifier is an independent adversarial `claude -p` pass — a self-judging writer can't catch its own drift.
-- [Roadmap]: Reuse the working v0.2 substrate (mnemo-mem store, review worker, hooks, MNEMO_REVIEWING sentinel) — evolve, don't rebuild.
+- [Roadmap]: Reuse the working v0.2 substrate (dorveille-mem store, review worker, hooks, DORVEILLE_REVIEWING sentinel) — evolve, don't rebuild.
 - [Roadmap]: Phase order follows the data dependency — provenance/trust metadata (P1) before the gate that consumes it (P2) before probes/replay on top (P3) before the CLI surface that ties it together (P4).
 
 ### Pending Todos
